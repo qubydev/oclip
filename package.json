@@ -1,0 +1,19 @@
+{
+  "name": "oclip",
+  "version": "0.1.0",
+  "description": "An open-source desktop video editor",
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "build": "npx --yes @electron/packager . oclip --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/oclip.ico",
+    "preview": "node desktop/preview.mjs",
+    "dev": "electron . --oclip-dev"
+  },
+  "devDependencies": {
+    "electron": "45.3.2"
+  }
+}

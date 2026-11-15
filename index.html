@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'">
+<title>oclip</title>
+<link rel="icon" href="assets/oclip.svg" type="image/svg+xml">
+<link rel="stylesheet" href="src/editor.css">
+<link rel="stylesheet" href="src/workspace.css">
+</head>
+<body>
+<header class="appbar">
+  <div class="brand"><img class="mark" src="assets/oclip.svg" width="24" height="24" alt="">oclip<span class="separator"></span><button id="project-menu" class="plain" popovertarget="file-menu" aria-label="Project menu">Project <span data-icon="chevron"></span></button>
+  <div id="file-menu" popover><button id="new-project">New project</button><button id="open-project">Open project… <kbd>Ctrl O</kbd></button><button id="save-project">Save project <kbd>Ctrl S</kbd></button><button id="save-as">Save as…</button><button id="demo-project">Open sample project</button></div></div>
+  <div class="project-title"><span data-icon="film"></span><input id="project-name" aria-label="Project name" maxlength="80"></div>
+  <div class="app-actions"><button id="shortcuts" class="icon-button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts" data-icon="keyboard"></button><button id="export" class="primary"><span data-icon="upload"></span>Export</button></div>
+  <dialog id="shortcut-dialog" aria-labelledby="shortcut-title"><div class="shortcut-header"><h2 id="shortcut-title">Keyboard shortcuts</h2><input id="shortcut-search" type="search" placeholder="Search shortcuts…" aria-label="Search keyboard shortcuts"><button id="close-shortcuts" class="icon-button" aria-label="Close keyboard shortcuts" data-icon="close"></button></div><div id="shortcut-list"></div></dialog>
+</header>
+<main>
+  <div class="workspace">
+    <aside class="panel library" aria-label="Asset library">
+      <nav class="library-tabs" aria-label="Library categories"><button class="active" data-tab="media"><span data-icon="film"></span>Media</button><button data-tab="audio"><span data-icon="music"></span>Audio</button><button data-tab="text"><span data-icon="text"></span>Text</button></nav>
+      <div class="library-body">
+        <div class="panel-heading"><h2 id="library-title">Project media</h2><span id="asset-count"></span></div>
+        <button id="import" class="import"><span data-icon="plus"></span>Import media</button>
+        <input id="browser-files" type="file" hidden multiple accept="video/*,image/*,audio/*">
+        <label id="search-label" class="search"><span data-icon="search"></span><input id="asset-search" placeholder="Search media" aria-label="Search media"></label>
+        <div class="asset-grid" id="asset-grid"></div>
+      </div>
+    </aside>
+    <section class="panel viewer" aria-label="Preview">
+
+      <div class="viewport" id="viewport"><canvas id="preview" width="1280" height="720" aria-label="Video composition preview"></canvas><div id="empty-preview" class="empty-preview" hidden><span data-icon="monitor"></span><span>No media on timeline</span></div></div>
+      <div class="transport"><div class="timecode"><span id="current-time">00:00:00:00</span><span>/</span><span id="total-time"></span></div><div class="transport-buttons"><button id="first" class="icon-button" title="Go to beginning" aria-label="Go to beginning" data-icon="first"></button><button id="back" class="icon-button step" title="Previous frame" aria-label="Previous frame" data-icon="back"></button><button id="play" class="icon-button play" title="Play (Space)" aria-label="Play" data-icon="play"></button><button id="forward" class="icon-button step" title="Next frame" aria-label="Next frame" data-icon="forward"></button><button id="last" class="icon-button" title="Go to end" aria-label="Go to end" data-icon="last"></button></div><div class="transport-end"><button id="preview-fit" type="button" class="icon-button" title="Fit preview to player" aria-label="Fit preview to player" data-icon="frame"></button><button id="monitor-audio" class="icon-button" title="Mute preview" aria-label="Mute preview" data-icon="volume"></button><button id="fullscreen" class="icon-button" title="Full screen preview" aria-label="Full screen preview" data-icon="maximize"></button></div></div>
+    </section>
+    <aside class="panel inspector" aria-label="Inspector">
+      <div class="panel-heading titlebar"><h2><span data-icon="sliders"></span>Properties</h2></div>
+      <nav class="inspector-tabs"><button id="canvas-tab" class="active"><span data-icon="frame"></span>Canvas</button><button id="clip-tab"><span data-icon="layers"></span>Layer</button></nav>
+      <div id="properties" class="properties"></div>
+    </aside>
+  </div>
+  <section class="panel timeline-panel" aria-label="Timeline">
+    <div class="timeline-heading"><h2><span data-icon="timeline"></span>Timeline</h2><div class="edit-tools"><button class="icon-button active" id="snap" aria-label="Toggle snapping" title="Snap to playhead and clip edges" data-icon="magnet" aria-pressed="true"></button><span class="separator"></span><button class="icon-button" id="undo" aria-label="Undo" title="Undo (Ctrl Z)" data-icon="undo"></button><button class="icon-button" id="redo" aria-label="Redo" title="Redo (Ctrl Shift Z)" data-icon="redo"></button><span class="separator"></span><button class="icon-button" id="split" aria-label="Split at playhead" title="Split at playhead (S)" data-icon="split"></button><button class="icon-button" id="delete" aria-label="Delete layer" title="Delete layer (Delete)" data-icon="trash"></button><button class="icon-button" id="mute-clip" aria-label="Mute clip" title="Mute clip" data-icon="volume" aria-pressed="false" disabled></button></div><div class="zoom-tools"><button id="zoom-out" class="icon-button" aria-label="Zoom out" data-icon="minus"></button><input id="zoom" type="range" min="-140" max="100" value="44" aria-label="Timeline zoom"><button id="zoom-in" class="icon-button" aria-label="Zoom in" data-icon="plus"></button><span class="separator"></span><button id="zoom-fit" class="icon-button" aria-label="Fit timeline" title="Fit timeline" data-icon="frame"></button></div></div>
+    <div class="timeline-scroll" id="timeline-scroll"><div id="timeline-grid" class="timeline-grid"></div></div>
+  </section>
+</main>
+<div id="status" class="editor-notice" role="status"></div>
+<div id="item-menu" popover role="menu" aria-label="Item actions"></div>
+<dialog id="remove-media-dialog" class="discard-dialog" aria-labelledby="remove-media-title" aria-describedby="remove-media-description">
+  <form method="dialog">
+    <h2 id="remove-media-title">Remove media?</h2>
+    <p id="remove-media-description"></p>
+    <footer>
+      <button class="secondary" value="cancel" autofocus>Cancel</button>
+      <button class="discard-action" value="remove">Remove media</button>
+    </footer>
+  </form>
+</dialog>
+<dialog id="discard-dialog" class="discard-dialog" aria-labelledby="discard-title" aria-describedby="discard-description">
+  <form method="dialog">
+    <h2 id="discard-title">Unsaved changes</h2>
+    <p id="discard-description">Any changes since your last save will be lost.</p>
+    <footer>
+      <button class="secondary" value="keep" autofocus>Keep editing</button>
+      <button class="discard-action" value="discard">Discard changes</button>
+    </footer>
+  </form>
+</dialog>
+<dialog id="export-dialog" aria-labelledby="export-title">
+  <form method="dialog">
+    <div class="dialog-head"><h2 id="export-title">Export video</h2><button id="close-export" class="icon-button" aria-label="Close" value="cancel" data-icon="close"></button></div>
+    <p id="export-details"></p>
+    <div class="export-settings">
+      <label for="export-format">Format</label>
+      <select id="export-format"></select>
+      <label for="export-location">Save to</label>
+      <div class="export-destination">
+        <output id="export-location"></output>
+        <button id="choose-export" class="secondary" type="button">Browse…</button>
+      </div>
+    </div>
+    <p id="export-message" role="status" hidden></p>
+    <label id="export-progress" hidden><span id="export-phase">Rendering video</span><progress max="1" value="0"></progress></label>
+    <footer><button id="cancel-export" class="secondary" value="cancel">Cancel</button><button id="start-export" type="button" class="primary"><span data-icon="upload"></span>Export</button></footer>
+  </form>
+</dialog>
+<script type="module" src="src/editor.js"></script>
+<script type="module" src="src/layout.js"></script>
+</body>
+</html>

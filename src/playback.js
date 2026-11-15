@@ -1,0 +1,226 @@
+
+import {FPS,timing} from './model.js';
+import {layoutText} from './text-layout.js';
+
+export class Player {
+  constructor(canvas, onDraw = () => {}) {
+    this.canvas = canvas;
+    this.context = canvas.getContext('2d', {alpha:false});
+    this.sources = new Map();
+    this.onDraw = onDraw;
+    this.muted = false;
+  }
+
+  source(clip,asset) {
+    if (!asset?.url) return null;
+    const key = clip.kind === 'image' ? asset.id : clip.id;
+    const existing = this.sources.get(key);
+    if (existing?.url === asset.url) return existing;
+    if (existing) this.release(existing);
+    const element = clip.kind === 'image' ? new Image() : document.createElement(clip.kind);
+    const entry = {element,url:asset.url};
+    this.sources.set(key,entry);
+    for (const event of ['load','loadeddata','seeked']) element.addEventListener(event,this.onDraw);
+    if (element instanceof HTMLMediaElement) {
+      element.preload = 'auto';
+      element.playsInline = true;
+      if (this.audio) {
+        entry.gain = this.audio.createGain();
+        this.audio.createMediaElementSource(element).connect(entry.gain).connect(this.destination);
+      }
+    }
+    element.src = asset.url;
+    return entry;
+  }
+
+  release({element,gain}) {
+    if (element instanceof HTMLMediaElement) {
+      element.pause();
+      element.removeAttribute('src');
+      element.load();
+      gain?.disconnect();
+    }
+  }
+
+  dispose() {
+    for (const source of this.sources.values()) this.release(source);
+    this.sources.clear();
+    this.audio?.close().catch(()=>{});
+  }
+
+  reconcile(project) {
+    const ids = new Set(project.tracks.flatMap(track=>track.clips.map(clip=>clip.kind==='image'?clip.assetId:clip.id)));
+    for (const [key,source] of this.sources) {
+      if (ids.has(key)) continue;
+      this.release(source);
+      this.sources.delete(key);
+    }
+    for (const track of project.tracks) {
+      for (const clip of track.clips) {
+        if (track.enabled) this.source(clip,project.assets.find(asset=>asset.id===clip.assetId));
+      }
+    }
+  }
+
+  render(project,frame,playing = false,force = false) {
+    const {canvas,context:ctx} = this;
+    const {width,height} = project;
+    if (canvas.width!==width) canvas.width=width;
+    if (canvas.height!==height) canvas.height=height;
+    ctx.fillStyle=project.color;
+    ctx.fillRect(0,0,width,height);
+    const active = new Set();
+
+    for (const track of [...project.tracks].reverse()) {
+      if (!track.enabled) continue;
+      for (const clip of track.clips) {
+        if (frame<clip.start || frame>=timing(clip)) continue;
+        const entry = this.source(clip,project.assets.find(asset=>asset.id===clip.assetId));
+        const media = entry?.element;
+        if (media instanceof HTMLMediaElement) {
+          const time = (frame-clip.start+clip.in)/FPS;
+          // Retain the decoded frame before a seek invalidates readyState.
+          if (media instanceof HTMLVideoElement && media.readyState>=2 && !media.seeking) {
+            entry.frame ??= document.createElement('canvas');
+            if (entry.frame.width!==media.videoWidth) entry.frame.width=media.videoWidth;
+            if (entry.frame.height!==media.videoHeight) entry.frame.height=media.videoHeight;
+            entry.frame.getContext('2d').drawImage(media,0,0);
+          }
+          const muted=this.muted||clip.muted===true;
+          if (entry.gain) entry.gain.gain.value=muted?0:clip.volume/100;
+          else {
+            media.muted=muted;
+            media.volume=clip.volume/100;
+          }
+          if (media.readyState && !media.seeking && Math.abs(media.currentTime-time)>(playing && !force ? .3 : .001)) media.currentTime=time;
+          active.add(media);
+          if (playing && media.paused && !entry.pending) {
+            entry.pending=true;
+            media.play().catch(()=>{}).finally(()=>{entry.pending=false;});
+          } else if (!playing) media.pause();
+        }
+        if (clip.kind==='audio') continue;
+        ctx.save();
+        ctx.translate(width/2+clip.x,height/2+clip.y);
+        ctx.scale(clip.scale/100,clip.scale/100);
+        ctx.globalAlpha=clip.opacity/100;
+        if (clip.kind==='text') {
+          ctx.fillStyle=clip.color;
+          ctx.textAlign='center';
+          ctx.textBaseline='middle';
+          const {lines,spacing,width:boxWidth,height:boxHeight}=layoutText(ctx,clip);
+          if(clip.textHeight!=null) {
+            ctx.beginPath();
+            ctx.rect(-boxWidth/2-1,-boxHeight/2,boxWidth+2,boxHeight);
+            ctx.clip();
+          }
+          const firstLine=(clip.fontSize-boxHeight)/2;
+          lines.forEach((line,i)=>ctx.fillText(line,0,firstLine+i*spacing));
+        } else {
+          const w = media?.naturalWidth || media?.videoWidth;
+          const h = media?.naturalHeight || media?.videoHeight;
+          const drawable=media instanceof HTMLVideoElement && (media.seeking || media.readyState<2) ? entry.frame : media;
+          if (w && h && drawable) {
+            const scale = Math.min(width/w,height/h);
+            ctx.drawImage(drawable,-w*scale/2,-h*scale/2,w*scale,h*scale);
+          }
+        }
+        ctx.restore();
+      }
+    }
+    for (const {element} of this.sources.values()) {
+      if (element instanceof HTMLMediaElement && !active.has(element)) element.pause();
+    }
+  }
+}
+
+function hasExportAudio(project) {
+  return project.tracks.some(track=>track.enabled&&track.clips.some(clip=>clip.kind==='audio'||clip.kind==='video'));
+}
+
+export function exportFormats(project) {
+  if(typeof MediaRecorder==='undefined') return [];
+  const mp4=hasExportAudio(project)?'video/mp4;codecs=avc1,mp4a.40.2':'video/mp4;codecs=avc1';
+  return [
+    {extension:'mp4',label:'MP4 (H.264)',mimeType:mp4,contentType:'video/mp4'},
+    {extension:'webm',label:'WebM',mimeType:'video/webm',contentType:'video/webm'},
+  ].filter(format=>MediaRecorder.isTypeSupported(format.mimeType));
+}
+
+export async function record(project,frames,mimeType,onProgress,signal) {
+  const canvas=document.createElement('canvas');
+  const player=new Player(canvas);
+  const hasAudio=hasExportAudio(project);
+  let stream;
+  let animation;
+  let recorder;
+  try {
+    if (hasAudio) {
+      player.audio=new AudioContext();
+      player.destination=player.audio.createMediaStreamDestination();
+      await player.audio.resume();
+    }
+    if (signal.aborted) throw new DOMException('Export canceled','AbortError');
+    player.reconcile(project);
+    await Promise.all([...player.sources.values()].map(({element})=>{
+      if (element instanceof HTMLImageElement) return element.decode();
+      if (element.readyState>=2) return null;
+      return new Promise((resolve,reject)=>{
+        const controller = new AbortController();
+        const complete = error => {
+          controller.abort();
+          clearTimeout(timeout);
+          signal.removeEventListener('abort',abort);
+          if (error) reject(error); else resolve();
+        };
+        const abort = () => complete(new DOMException('Export canceled','AbortError'));
+        const timeout = setTimeout(()=>complete(Error('Timed out loading source media.')),12000);
+        signal.addEventListener('abort',abort,{once:true});
+        element.addEventListener('loadeddata',()=>complete(),{signal:controller.signal});
+        element.addEventListener('error',()=>complete(Error('A source file could not be decoded.')),{signal:controller.signal});
+        if (element.error) complete(Error('A source file could not be decoded.'));
+      });
+    }));
+    if (signal.aborted) throw new DOMException('Export canceled','AbortError');
+    player.render(project,0);
+    stream=canvas.captureStream(FPS);
+    if (hasAudio) for (const track of player.destination.stream.getAudioTracks()) stream.addTrack(track);
+    recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:10_000_000});
+    const chunks=[];
+    recorder.ondataavailable=event=>{if(event.data.size) chunks.push(event.data);};
+    return await new Promise((resolve,reject)=>{
+      const abort = () => {
+        if (recorder.state!=='inactive') recorder.stop();
+        reject(new DOMException('Export canceled','AbortError'));
+      };
+      signal.addEventListener('abort',abort,{once:true});
+      recorder.onerror=event=>{
+        signal.removeEventListener('abort',abort);
+        reject(event.error);
+      };
+      recorder.onstop=()=>{
+        signal.removeEventListener('abort',abort);
+        if(!chunks.length) reject(Error('The encoder did not produce any video.'));
+        else resolve(new Blob(chunks,{type:chunks[0].type||recorder.mimeType}));
+      };
+      recorder.start(1000);
+      const start=performance.now();
+      let last=-1;
+      const draw=now=>{
+        const frame=Math.floor((now-start)*FPS/1000);
+        if (frame>=frames) {recorder.stop();return;}
+        if (frame!==last) {
+          last=frame;
+          player.render(project,frame,true);
+          onProgress(frame/frames);
+        }
+        animation=requestAnimationFrame(draw);
+      };
+      draw(start);
+    });
+  } finally {
+    cancelAnimationFrame(animation);
+    stream?.getTracks().forEach(track=>track.stop());
+    player.dispose();
+  }
+}
