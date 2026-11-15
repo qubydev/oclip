@@ -1,5 +1,5 @@
-const {app, BrowserWindow, Menu, dialog, ipcMain, protocol} = require('electron');
-const {readFile, writeFile, stat, rename, rm} = require('node:fs/promises');
+const {app, BrowserWindow, Menu, dialog, ipcMain, protocol, shell} = require('electron');
+const {readFile, writeFile, appendFile, stat, rename, rm, mkdir, readdir} = require('node:fs/promises');
 const {createReadStream, watch} = require('node:fs');
 const {Readable} = require('node:stream');
 const {randomUUID} = require('node:crypto');
@@ -58,6 +58,27 @@ async function atomicWrite(file, value) {
   }
 }
 
+function projectForDisk(project) {
+  return {...project,assets:project.assets.map(({url,...asset})=>({
+    ...asset,...(bundledAssets.has(url)?{bundled:url}:{}),
+  }))};
+}
+
+async function loadProject(project) {
+  if(!project||project.version!==1||!Array.isArray(project.assets)) throw Error('Unsupported project.');
+  for(const asset of project.assets) {
+    if(!asset||typeof asset!=='object') throw Error('Invalid media record.');
+    if(typeof asset.path==='string'&&asset.path) {
+      try { asset.url=(await register(asset.path)).url; }
+      catch { asset.url=''; }
+    } else {
+      const bundled=asset.bundled??asset.url;
+      asset.url=bundledAssets.has(bundled)?bundled:'';
+    }
+  }
+  return project;
+}
+
 app.whenReady().then(() => {
   app.dock?.setIcon(pngIcon);
   protocol.handle('oclip', async request => {
@@ -98,34 +119,100 @@ app.whenReady().then(() => {
     if (result.canceled) return null;
     const [file] = result.filePaths;
     if ((await stat(file)).size > 10_000_000) throw Error('Project file is too large.');
-    const project = JSON.parse(await readFile(file,'utf8'));
-    if (!project || project.version !== 1 || !Array.isArray(project.assets)) throw Error('Unsupported project.');
-    for (const asset of project.assets) {
-      if (!asset || typeof asset !== 'object') throw Error('Invalid media record.');
-      if (typeof asset.path === 'string' && asset.path) {
-        try { asset.url = (await register(asset.path)).url; }
-        catch { asset.url = ''; }
-      } else {
-        const bundled = asset.bundled ?? asset.url;
-        asset.url = bundledAssets.has(bundled) ? bundled : '';
-      }
-    }
-    return {file,project};
+    const {thumbnail,...data}=JSON.parse(await readFile(file,'utf8'));
+    const project=await loadProject(data);
+    return {file,project,managed:path.dirname(file)===projectFolder};
   });
   const savePaths = new WeakMap();
-  handle('save', async (win, project, newFile) => {
-    let file = newFile ? null : savePaths.get(win);
-    if (!file) {
-      const result = await dialog.showSaveDialog(win,{defaultPath:(project.name || 'Untitled').replace(/[^\w -]/g,'_')+'.oclip',filters:projects});
-      if (result.canceled) return null;
-      file = result.filePath;
-    }
-    const assets = project.assets.map(({url,...asset}) => ({
-      ...asset,
-      ...(bundledAssets.has(url) ? {bundled:url} : {}),
+  const projectFolder=path.join(app.getPath('userData'),'projects');
+  const projectIdPattern=/^[a-f0-9-]{36}$/;
+  function managedFile(id) {
+    if(typeof id!=='string'||!projectIdPattern.test(id)) throw Error('Invalid project.');
+    return path.join(projectFolder,id+'.oclip');
+  }
+  function thumbnailData(value) {
+    return typeof value==='string'&&value.length<=150_000&&/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(value)?value:undefined;
+  }
+  async function managedRead(id) {
+    const file=managedFile(id);
+    if((await stat(file)).size>10_000_000) throw Error('Project file is too large.');
+    return JSON.parse(await readFile(file,'utf8'));
+  }
+  async function createManaged(project) {
+    await mkdir(projectFolder,{recursive:true});
+    const id=randomUUID();
+    const file=managedFile(id);
+    await atomicWrite(file,JSON.stringify(project,null,2));
+    return {id,file};
+  }
+  handle('projects-list',async ()=>{
+    let entries;
+    try {entries=await readdir(projectFolder,{withFileTypes:true});}
+    catch(error) {if(error.code==='ENOENT') return [];throw error;}
+    const records=await Promise.allSettled(entries.filter(entry=>entry.isFile()&&entry.name.endsWith('.oclip')&&
+      projectIdPattern.test(entry.name.slice(0,-6))).map(async entry=>{
+      const id=entry.name.slice(0,-6);
+      const {name,thumbnail}=await managedRead(id);
+      return {id,name:String(name||'Untitled project'),thumbnail:thumbnailData(thumbnail),modified:(await stat(managedFile(id))).mtimeMs};
     }));
-    await atomicWrite(file,JSON.stringify({...project,assets},null,2));
-    savePaths.set(win,file);
+    return records.filter(record=>record.status==='fulfilled').map(record=>record.value).sort((a,b)=>b.modified-a.modified);
+  });
+  handle('projects-create',async (_win,project)=>createManaged(projectForDisk(project)));
+  handle('projects-open',async (_win,id)=>{
+    const {thumbnail,...project}=await managedRead(id);
+    return {file:managedFile(id),project:await loadProject(project),managed:true};
+  });
+  handle('projects-duplicate',async (_win,id)=>{
+    const project=await managedRead(id);
+    await createManaged({...project,name:project.name+' copy'});
+  });
+  handle('projects-delete',async (_win,id)=>{
+    await shell.trashItem(managedFile(id));
+  });
+  const recoveryFile=path.join(app.getPath('userData'),'recovery.json');
+  let recoveryWrite=Promise.resolve();
+  handle('checkpoint', (win,project,view)=>{
+    const value=project?JSON.stringify({file:savePaths.get(win)??null,project:projectForDisk(project),view}):null;
+    recoveryWrite=recoveryWrite.catch(()=>{}).then(async()=>{
+      if(value) await atomicWrite(recoveryFile,value);
+      else await rm(recoveryFile,{force:true});
+    });
+    return recoveryWrite;
+  });
+  handle('recover', async ()=>{
+    let checkpoint;
+    try { checkpoint=JSON.parse(await readFile(recoveryFile,'utf8')); }
+    catch(error) { if(error.code==='ENOENT') return null; throw error; }
+    return {...checkpoint,managed:typeof checkpoint.file==='string'&&path.dirname(checkpoint.file)===projectFolder,
+      project:await loadProject(checkpoint.project)};
+  });
+  handle('relink', async (win,name)=>{
+    const result=await dialog.showOpenDialog(win,{title:'Locate '+String(name),properties:['openFile'],
+      filters:[{name:'Media',extensions:mediaExtensions}]});
+    return result.canceled?null:register(result.filePaths[0]);
+  });
+  handle('relink-folder', async (win,files)=>{
+    const result=await dialog.showOpenDialog(win,{title:'Find missing media in a folder',properties:['openDirectory']});
+    if(result.canceled) return null;
+    const folder=result.filePaths[0];
+    const matches=[];
+    for(const {id,file} of files) {
+      if(typeof file!=='string'||!file) continue;
+      try {matches.push({id,replacement:await register(path.join(folder,path.basename(file)))});}
+      catch {}
+    }
+    return matches;
+  });
+  handle('save', async (win, project, thumbnail) => {
+    const file=savePaths.get(win);
+    if(!file||path.dirname(file)!==projectFolder) throw Error('No managed project is open.');
+    const stored=projectForDisk(project);
+    const image=thumbnailData(thumbnail);
+    if(image) stored.thumbnail=image;
+    else if(project.tracks.some(track=>track.enabled&&track.clips.some(clip=>clip.kind!=='audio'))) {
+      try {stored.thumbnail=thumbnailData(JSON.parse(await readFile(file,'utf8')).thumbnail);} catch {}
+    }
+    await atomicWrite(file,JSON.stringify(stored,null,2));
     return file;
   });
   handle('project-path', (win,file) => {
@@ -148,12 +235,29 @@ app.whenReady().then(() => {
     exportPaths.set(win,{id,file:result.filePath});
     return {id,file:result.filePath};
   });
-  handle('export', async (win,id,bytes) => {
+  handle('export-chunk', async (win,id,bytes) => {
     const destination=exportPaths.get(win);
     if(!destination||id!==destination.id) throw Error('Choose an export location again.');
     if(!(bytes instanceof Uint8Array)||!bytes.byteLength) throw Error('The export contains no video data.');
-    exportPaths.delete(win);
-    await atomicWrite(destination.file,bytes);
+    if(!destination.temp) {
+      destination.temp=path.join(path.dirname(destination.file),'.'+randomUUID()+'.tmp');
+      await writeFile(destination.temp,bytes,{flag:'wx'});
+    } else await appendFile(destination.temp,bytes);
+  });
+  handle('finish-export', async (win,id,commit)=>{
+    const destination=exportPaths.get(win);
+    if(!destination||id!==destination.id) throw Error('Choose an export location again.');
+    if(!destination.temp) {
+      if(commit) throw Error('The export contains no video data.');
+      return;
+    }
+    try {
+      if(commit) await rename(destination.temp,destination.file);
+    } finally {
+      await rm(destination.temp,{force:true});
+      delete destination.temp;
+      if(commit) exportPaths.delete(win);
+    }
   });
 
   const pendingCloses = new WeakSet();

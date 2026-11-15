@@ -159,14 +159,5 @@ function resize(key,value) {
   apply();
 }
 
-const reset=document.createElement('button');
-reset.textContent='Reset panel layout';
-reset.onclick=()=>{
-  state={...defaults};
-  apply();
-  save();
-  document.getElementById('file-menu').hidePopover();
-};
-document.getElementById('file-menu').append(reset);
 new ResizeObserver(apply).observe(main);
 apply();

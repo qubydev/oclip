@@ -2,6 +2,23 @@
 import {FPS,timing} from './model.js';
 import {layoutText} from './text-layout.js';
 
+export function compositionAt(project,frame) {
+  const assets=new Map(project.assets.map(asset=>[asset.id,asset]));
+  const layers=[];
+  for(const track of [...project.tracks].reverse()) {
+    if(!track.enabled) continue;
+    for(const clip of track.clips) {
+      if(frame<clip.start||frame>=timing(clip)) continue;
+      const elapsed=frame-clip.start;
+      const remaining=clip.length-1-elapsed;
+      const fade=Math.min(1,clip.fadeIn?elapsed/clip.fadeIn:1,clip.fadeOut?remaining/clip.fadeOut:1);
+      layers.push({clip,asset:assets.get(clip.assetId),sourceTime:(elapsed+clip.in)/FPS,
+        muted:track.muted===true||clip.muted===true,fade});
+    }
+  }
+  return layers;
+}
+
 export class Player {
   constructor(canvas, onDraw = () => {}) {
     this.canvas = canvas;
@@ -71,14 +88,11 @@ export class Player {
     ctx.fillRect(0,0,width,height);
     const active = new Set();
 
-    for (const track of [...project.tracks].reverse()) {
-      if (!track.enabled) continue;
-      for (const clip of track.clips) {
-        if (frame<clip.start || frame>=timing(clip)) continue;
-        const entry = this.source(clip,project.assets.find(asset=>asset.id===clip.assetId));
+    for (const {clip,asset,sourceTime,muted:layerMuted,fade} of compositionAt(project,frame)) {
+        const entry = this.source(clip,asset);
         const media = entry?.element;
         if (media instanceof HTMLMediaElement) {
-          const time = (frame-clip.start+clip.in)/FPS;
+          const time = sourceTime;
           // Retain the decoded frame before a seek invalidates readyState.
           if (media instanceof HTMLVideoElement && media.readyState>=2 && !media.seeking) {
             entry.frame ??= document.createElement('canvas');
@@ -86,11 +100,11 @@ export class Player {
             if (entry.frame.height!==media.videoHeight) entry.frame.height=media.videoHeight;
             entry.frame.getContext('2d').drawImage(media,0,0);
           }
-          const muted=this.muted||clip.muted===true;
-          if (entry.gain) entry.gain.gain.value=muted?0:clip.volume/100;
+          const muted=this.muted||layerMuted;
+          if (entry.gain) entry.gain.gain.value=muted?0:clip.volume/100*fade;
           else {
             media.muted=muted;
-            media.volume=clip.volume/100;
+            media.volume=clip.volume/100*fade;
           }
           if (media.readyState && !media.seeking && Math.abs(media.currentTime-time)>(playing && !force ? .3 : .001)) media.currentTime=time;
           active.add(media);
@@ -103,7 +117,7 @@ export class Player {
         ctx.save();
         ctx.translate(width/2+clip.x,height/2+clip.y);
         ctx.scale(clip.scale/100,clip.scale/100);
-        ctx.globalAlpha=clip.opacity/100;
+        ctx.globalAlpha=clip.opacity/100*fade;
         if (clip.kind==='text') {
           ctx.fillStyle=clip.color;
           ctx.textAlign='center';
@@ -126,7 +140,6 @@ export class Player {
           }
         }
         ctx.restore();
-      }
     }
     for (const {element} of this.sources.values()) {
       if (element instanceof HTMLMediaElement && !active.has(element)) element.pause();
@@ -147,13 +160,15 @@ export function exportFormats(project) {
   ].filter(format=>MediaRecorder.isTypeSupported(format.mimeType));
 }
 
-export async function record(project,frames,mimeType,onProgress,signal) {
+export async function record(project,frames,mimeType,onProgress,signal,writeChunk,videoBitsPerSecond=10_000_000) {
   const canvas=document.createElement('canvas');
   const player=new Player(canvas);
   const hasAudio=hasExportAudio(project);
   let stream;
   let animation;
   let recorder;
+  let writes=Promise.resolve();
+  let writeError;
   try {
     if (hasAudio) {
       player.audio=new AudioContext();
@@ -185,9 +200,19 @@ export async function record(project,frames,mimeType,onProgress,signal) {
     player.render(project,0);
     stream=canvas.captureStream(FPS);
     if (hasAudio) for (const track of player.destination.stream.getAudioTracks()) stream.addTrack(track);
-    recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:10_000_000});
+    recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond});
     const chunks=[];
-    recorder.ondataavailable=event=>{if(event.data.size) chunks.push(event.data);};
+    recorder.ondataavailable=event=>{
+      if(!event.data.size) return;
+      if(!writeChunk) {chunks.push(event.data);return;}
+      writes=writes.then(async()=>{
+        if(!signal.aborted&&!writeError) await writeChunk(new Uint8Array(await event.data.arrayBuffer()));
+      }).catch(error=>{
+        writeError=error;
+        cancelAnimationFrame(animation);
+        if(recorder.state!=='inactive') recorder.stop();
+      });
+    };
     return await new Promise((resolve,reject)=>{
       const abort = () => {
         if (recorder.state!=='inactive') recorder.stop();
@@ -198,9 +223,12 @@ export async function record(project,frames,mimeType,onProgress,signal) {
         signal.removeEventListener('abort',abort);
         reject(event.error);
       };
-      recorder.onstop=()=>{
+      recorder.onstop=async ()=>{
         signal.removeEventListener('abort',abort);
-        if(!chunks.length) reject(Error('The encoder did not produce any video.'));
+        await writes;
+        if(writeError) reject(writeError);
+        else if(writeChunk) resolve(null);
+        else if(!chunks.length) reject(Error('The encoder did not produce any video.'));
         else resolve(new Blob(chunks,{type:chunks[0].type||recorder.mimeType}));
       };
       recorder.start(1000);
@@ -220,6 +248,8 @@ export async function record(project,frames,mimeType,onProgress,signal) {
     });
   } finally {
     cancelAnimationFrame(animation);
+    if(recorder) recorder.ondataavailable=null;
+    await writes;
     stream?.getTracks().forEach(track=>track.stop());
     player.dispose();
   }

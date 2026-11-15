@@ -9,9 +9,23 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test",
-    "build": "npx --yes @electron/packager . oclip --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/oclip.ico",
+    "build": "npx --yes electron-builder@26 --win nsis --x64",
     "preview": "node desktop/preview.mjs",
     "dev": "electron . --oclip-dev"
+  },
+  "build": {
+    "appId": "oclip.editor",
+    "productName": "oclip",
+    "files": [
+      "index.html",
+      "src/**/*",
+      "desktop/**/*.cjs",
+      "assets/**/*"
+    ],
+    "win": {
+      "icon": "assets/oclip.ico",
+      "artifactName": "oclip-Setup-${version}-${arch}.${ext}"
+    }
   },
   "devDependencies": {
     "electron": "45.3.2"

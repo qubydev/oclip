@@ -2,6 +2,64 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MAX_FRAMES,applyGroupMove,planGroupMove,createClip,createProject,createTrack,editSpan,extractClipAudio,fittedZoom,id,pasteClipGroups,splitClip,timecode,timelineMetrics,validateProject} from '../src/model.js';
 import {sampleProject} from '../src/sample.js';
+import {closeGap,linkedSelection,planTimelineDrag,removeSelection,splitSelection} from '../src/timeline-edits.js';
+import {compositionAt} from '../src/playback.js';
+
+test('ripple delete preserves existing gaps and close gap moves the downstream clips together',()=>{
+  const project=createProject();
+  const track=createTrack('text');
+  const first={...createClip(null,10),length:8};
+  const second={...createClip(null,22),length:5};
+  const third={...createClip(null,35),length:6};
+  track.clips.push(first,second,third);
+  project.tracks.push(track);
+  removeSelection(project,[first.id],true);
+  assert.deepEqual(track.clips.map(clip=>clip.start),[14,27]);
+  closeGap(project,second.id);
+  assert.deepEqual(track.clips.map(clip=>clip.start),[0,13]);
+});
+
+test('drag snapping skips a blocked candidate and picks a valid nearby edge',()=>{
+  const project=createProject();
+  const track=createTrack('text');
+  const moving={...createClip(null,0),length:10};
+  track.clips.push(moving,{...createClip(null,20),length:10});
+  project.tracks.push(track);
+  const planned=planTimelineDrag(project,[moving.id],13,0,false,[22,20],4);
+  assert.equal(planned.snap,20);
+  assert.equal(planned.moves[0].clip.start,10);
+});
+
+test('linked extracted audio follows its matching half after splitting both clips',()=>{
+  const project=createProject();
+  const video={id:id(),name:'source.mp4',kind:'video',url:'assets/source.mp4',frames:60};
+  const track=createTrack('video');
+  const source=createClip(video);
+  project.assets.push(video);
+  track.clips.push(source);
+  project.tracks.push(track);
+  const audio=extractClipAudio(project,source.id);
+  const [rightVideo,rightAudio]=splitSelection(project,[source.id,audio.id],25);
+  assert.deepEqual(linkedSelection(project,[rightAudio]),[rightAudio,rightVideo]);
+  assert.deepEqual(linkedSelection(project,[source.id]),[source.id,audio.id]);
+  assert.ok(validateProject(project));
+});
+
+test('composition resolves clip boundaries, source offsets, track mute and fades',()=>{
+  const project=createProject();
+  const track=createTrack('text');
+  track.muted=true;
+  const clip={...createClip(null,20),length:12,fadeIn:4,fadeOut:4};
+  track.clips.push(clip);
+  project.tracks.push(track);
+  assert.deepEqual(compositionAt(project,19),[]);
+  assert.deepEqual(compositionAt(project,32),[]);
+  const [start]=compositionAt(project,22);
+  assert.equal(start.sourceTime,2/30);
+  assert.equal(start.fade,.5);
+  assert.equal(start.muted,true);
+  assert.equal(compositionAt(project,31)[0].fade,0);
+});
 
 test('group moves preserve time and track offsets and reject conflicts atomically',()=>{
   const project=createProject();

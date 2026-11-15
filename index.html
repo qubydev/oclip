@@ -10,9 +10,22 @@
 <link rel="stylesheet" href="src/workspace.css">
 </head>
 <body>
+<section id="home-screen" class="project-home" aria-label="Project home" hidden>
+  <header class="home-bar"><img class="mark" src="assets/oclip.svg" width="24" height="24" alt="">oclip</header>
+  <div class="home-content">
+    <div class="home-heading">
+      <h1>Projects</h1>
+      <div class="home-actions">
+        <button id="home-import" class="secondary"><span data-icon="folder"></span>Import project</button>
+        <button id="home-new" class="primary"><span data-icon="plus"></span>New project</button>
+      </div>
+    </div>
+    <p id="home-status" role="status" hidden></p>
+    <div id="home-projects" class="home-projects"></div>
+  </div>
+</section>
 <header class="appbar">
-  <div class="brand"><img class="mark" src="assets/oclip.svg" width="24" height="24" alt="">oclip<span class="separator"></span><button id="project-menu" class="plain" popovertarget="file-menu" aria-label="Project menu">Project <span data-icon="chevron"></span></button>
-  <div id="file-menu" popover><button id="new-project">New project</button><button id="open-project">Open project… <kbd>Ctrl O</kbd></button><button id="save-project">Save project <kbd>Ctrl S</kbd></button><button id="save-as">Save as…</button><button id="demo-project">Open sample project</button></div></div>
+  <div class="brand"><img class="mark" src="assets/oclip.svg" width="24" height="24" alt="">oclip<span class="separator"></span><button id="go-home" type="button" class="plain" title="Back to projects"><span data-icon="home"></span>Home</button></div>
   <div class="project-title"><span data-icon="film"></span><input id="project-name" aria-label="Project name" maxlength="80"></div>
   <div class="app-actions"><button id="shortcuts" class="icon-button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts" data-icon="keyboard"></button><button id="export" class="primary"><span data-icon="upload"></span>Export</button></div>
   <dialog id="shortcut-dialog" aria-labelledby="shortcut-title"><div class="shortcut-header"><h2 id="shortcut-title">Keyboard shortcuts</h2><input id="shortcut-search" type="search" placeholder="Search shortcuts…" aria-label="Search keyboard shortcuts"><button id="close-shortcuts" class="icon-button" aria-label="Close keyboard shortcuts" data-icon="close"></button></div><div id="shortcut-list"></div></dialog>
@@ -47,23 +60,13 @@
 </main>
 <div id="status" class="editor-notice" role="status"></div>
 <div id="item-menu" popover role="menu" aria-label="Item actions"></div>
-<dialog id="remove-media-dialog" class="discard-dialog" aria-labelledby="remove-media-title" aria-describedby="remove-media-description">
+<dialog id="confirm-dialog" class="discard-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-description">
   <form method="dialog">
-    <h2 id="remove-media-title">Remove media?</h2>
-    <p id="remove-media-description"></p>
+    <h2 id="confirm-title"></h2>
+    <p id="confirm-description"></p>
     <footer>
-      <button class="secondary" value="cancel" autofocus>Cancel</button>
-      <button class="discard-action" value="remove">Remove media</button>
-    </footer>
-  </form>
-</dialog>
-<dialog id="discard-dialog" class="discard-dialog" aria-labelledby="discard-title" aria-describedby="discard-description">
-  <form method="dialog">
-    <h2 id="discard-title">Unsaved changes</h2>
-    <p id="discard-description">Any changes since your last save will be lost.</p>
-    <footer>
-      <button class="secondary" value="keep" autofocus>Keep editing</button>
-      <button class="discard-action" value="discard">Discard changes</button>
+      <button id="confirm-cancel" class="secondary" value="cancel" autofocus></button>
+      <button id="confirm-action" value="confirm"></button>
     </footer>
   </form>
 </dialog>
@@ -74,6 +77,12 @@
     <div class="export-settings">
       <label for="export-format">Format</label>
       <select id="export-format"></select>
+      <label for="export-quality">Quality</label>
+      <select id="export-quality">
+        <option value="4000000">Smaller file</option>
+        <option value="10000000" selected>Balanced</option>
+        <option value="20000000">Higher quality</option>
+      </select>
       <label for="export-location">Save to</label>
       <div class="export-destination">
         <output id="export-location"></output>

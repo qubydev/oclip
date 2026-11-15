@@ -17,7 +17,7 @@ To inspect the interface without installing Electron, run `npm run preview` and 
 
 ## Build for Windows
 
-Run `npm install` and then `npm run build` from the project folder. The build creates a portable Windows x64 app at `dist/oclip-win32-x64/oclip.exe`. Keep the entire output folder together when moving or sharing it.
+Run `npm install` and then `npm run build` from the project folder. Share the Windows x64 installer from `dist/oclip-Setup-<version>-x64.exe`. Recipients can run the installer directly on their Windows PCs.
 
 ## Edit
 

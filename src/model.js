@@ -54,9 +54,15 @@ export function pasteClipGroups(project, groups, frame) {
       clip.start+offset<timing(existing)&&timing(clip)+offset>existing.start));
   });
   const sourceIndices=groups.map(group=>project.tracks.findIndex(track=>track.id===group.trackId)).filter(index=>index>=0);
+  const copyIds=new Map(clips.map(clip=>[clip.id,id()]));
   let insertAt=sourceIndices.length?Math.max(...sourceIndices)+1:project.tracks.length;
   return groups.flatMap(({trackId,kind,clips})=>{
-    const copies=clips.map(clip=>({...clip,id:id(),start:clip.start+offset}));
+    const copies=clips.map(clip=>{
+      const copy={...clip,id:copyIds.get(clip.id),start:clip.start+offset};
+      if(copyIds.has(clip.audioFor)) copy.audioFor=copyIds.get(clip.audioFor);
+      else delete copy.audioFor;
+      return copy;
+    });
     const source=project.tracks.find(track=>track.id===trackId);
     const fits=!needsTracks;
     const destination=fits?source:createTrack(kind,project.tracks);
@@ -120,7 +126,7 @@ export function extractClipAudio(project, clipId) {
   if (!context || context.track.locked || context.clip.kind !== 'video' || !context.asset?.url) return null;
   const {clip,asset} = context;
   const audio = {...asset,id:id(),kind:'audio',name:asset.name+' (audio)'};
-  const audioClip = {...createClip(audio,clip.start),in:clip.in,length:clip.length,volume:clip.volume};
+  const audioClip = {...createClip(audio,clip.start),in:clip.in,length:clip.length,volume:clip.volume,audioFor:clip.id};
   const placement = planPlacement(project.tracks.filter(track=>track.enabled),audioClip,clip.start);
   if (!placement.track) placement.newIndex=project.tracks.length;
   project.assets.push(audio);
@@ -211,7 +217,8 @@ export function validateProject(project) {
   return project.tracks.every(track=>{
     if (!track || typeof track.id!=='string' || seen.has(track.id) || !Object.hasOwn(trackTypes,track.kind) ||
         typeof track.name!=='string' || track.icon!==trackTypes[track.kind][1] ||
-        typeof track.enabled!=='boolean' || typeof track.locked!=='boolean' || !Array.isArray(track.clips)) return false;
+        typeof track.enabled!=='boolean' || typeof track.locked!=='boolean' ||
+        (track.muted!==undefined&&typeof track.muted!=='boolean') || !Array.isArray(track.clips)) return false;
     seen.add(track.id);
     let end = 0;
     return [...track.clips].sort((a,b)=>(a?.start??0)-(b?.start??0)).every(clip=>{
@@ -221,6 +228,9 @@ export function validateProject(project) {
           !integer(clip.in,0,MAX_FRAMES) || !integer(clip.x,-3840,3840) || !integer(clip.y,-3840,3840) ||
           !integer(clip.scale,1,400) || !integer(clip.opacity,0,100) || !integer(clip.volume,0,100) ||
           (clip.muted!==undefined&&typeof clip.muted!=='boolean') ||
+          (clip.audioFor!==undefined&&(clip.kind!=='audio'||typeof clip.audioFor!=='string')) ||
+          (clip.fadeIn!==undefined&&!integer(clip.fadeIn,0,MAX_FRAMES)) ||
+          (clip.fadeOut!==undefined&&!integer(clip.fadeOut,0,MAX_FRAMES)) ||
           !integer(clip.fontSize,8,500) ||
           (clip.textWidth!=null&&!integer(clip.textWidth,1,MAX_TEXT_BOX_SIZE)) ||
           (clip.textHeight!=null&&!integer(clip.textHeight,1,MAX_TEXT_BOX_SIZE))) return false;
