@@ -30,6 +30,8 @@ Run `npm install` and then `npm run build` from the project folder. Share the Wi
 
 ## Code
 
+See the [development plan](docs/ROADMAP.md) for Windows release checks and the order for adding paid assets and MCP.
+
 `src/model.js` defines the project and frame operations. `src/editor.js` connects the UI and editor state. `src/playback.js` composes the preview and renders exports. `desktop/` contains the Electron shell, native dialogs, and local media server.
 
 Run `npm test` to check the timeline model.

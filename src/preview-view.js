@@ -1,5 +1,6 @@
 const clamp=(value,min,max)=>Math.min(max,Math.max(min,value));
 const minimapIdleMs=3000;
+const minimumFitRatio=.5;
 
 export class PreviewView {
   constructor(viewport,canvas) {
@@ -23,15 +24,26 @@ export class PreviewView {
     this.map.addEventListener('pointerleave',()=>this.scheduleMinimapHide());
     viewport.tabIndex=0;
     viewport.setAttribute('aria-label','Preview. Drag to pan. Control or Command plus wheel to zoom. Arrow keys to pan.');
-    document.getElementById('preview-fit').onclick=()=>this.fit();
+    document.getElementById('preview-fit').onclick=()=>{
+      if(viewport.classList.contains('showing-asset')) this.fitAsset();
+      else this.fit();
+    };
     viewport.addEventListener('wheel',event=>{
-      if(viewport.classList.contains('showing-asset')) return;
+      if(viewport.classList.contains('showing-asset')) {
+        const media=viewport.querySelector('.asset-preview :is(img,video)');
+        if(!media) return;
+        event.preventDefault();
+        const unit=event.deltaMode===1?16:event.deltaMode===2?viewport.clientHeight:1;
+        if(event.ctrlKey||event.metaKey) {
+          this.queueZoom(event,unit,media);
+        }
+        return;
+      }
       if(this.map.contains(event.target)) return;
       event.preventDefault();
       const unit=event.deltaMode===1?16:event.deltaMode===2?viewport.clientHeight:1;
       if(event.ctrlKey||event.metaKey) {
-        const rect=viewport.getBoundingClientRect();
-        this.zoom(this.scale*Math.exp(-event.deltaY*unit*.005),event.clientX-rect.left,event.clientY-rect.top);
+        this.queueZoom(event,unit);
       } else {
         this.x-=(event.shiftKey?event.deltaY:event.deltaX)*unit;
         this.y-=(event.shiftKey?0:event.deltaY)*unit;
@@ -71,6 +83,7 @@ export class PreviewView {
     viewport.onpointercancel=end;
     viewport.onlostpointercapture=end;
     viewport.onkeydown=event=>{
+      if(viewport.classList.contains('showing-asset')) return;
       const offset=event.shiftKey?80:20;
       const moves={ArrowLeft:[offset,0],ArrowRight:[-offset,0],ArrowUp:[0,offset],ArrowDown:[0,-offset]};
       if(!moves[event.key]) return;
@@ -82,16 +95,64 @@ export class PreviewView {
     };
   }
 
+  queueZoom(event,unit,media=null) {
+    if(this.pendingZoom && this.pendingZoom.media!==media) this.cancelZoom();
+    const delta=clamp(-event.deltaY*unit*.0013,-.14,.14);
+    this.pendingZoom={
+      media,
+      delta:clamp((this.pendingZoom?.delta??0)+delta,-.14,.14),
+      x:event.clientX,
+      y:event.clientY,
+    };
+    if(this.zoomFrame) return;
+    this.zoomFrame=requestAnimationFrame(()=>{
+      const {media,delta,x,y}=this.pendingZoom;
+      this.pendingZoom=null;
+      this.zoomFrame=0;
+      const factor=Math.exp(delta);
+      if(media) {
+        if(!media.isConnected) return;
+        this.assetScale=clamp(this.assetScale*factor,minimumFitRatio,8);
+        media.style.scale=this.assetScale;
+      } else if(!this.viewport.classList.contains('showing-asset')) {
+        const rect=this.viewport.getBoundingClientRect();
+        this.zoom(this.scale*factor,x-rect.left,y-rect.top);
+      }
+    });
+  }
+
+  cancelZoom() {
+    cancelAnimationFrame(this.zoomFrame);
+    this.zoomFrame=0;
+    this.pendingZoom=null;
+  }
+
+  fitScale(w,h) {
+    const inset=Math.min(12,w/4,h/4);
+    return Math.min((w-2*inset)/this.width,(h-2*inset)/this.height);
+  }
+
+  fitAsset() {
+    this.cancelZoom();
+    this.assetScale=1;
+    const media=this.viewport.querySelector('.asset-preview :is(img,video)');
+    if(media) media.style.scale='';
+  }
+
   zoom(scale,px=this.viewport.clientWidth/2,py=this.viewport.clientHeight/2) {
-    const ratio=clamp(scale,.01,8)/this.scale;
+    const minimum=this.fitScale(this.viewport.clientWidth,this.viewport.clientHeight)*minimumFitRatio;
+    scale=clamp(scale,minimum,Math.max(8,minimum));
+    if(scale===this.scale) return;
+    const ratio=scale/this.scale;
     this.x=px-this.viewport.clientWidth/2-(px-this.viewport.clientWidth/2-this.x)*ratio;
     this.y=py-this.viewport.clientHeight/2-(py-this.viewport.clientHeight/2-this.y)*ratio;
-    this.scale=clamp(scale,.01,8);
+    this.scale=scale;
     this.auto=false;
     this.layout({revealMinimap:true});
   }
 
   fit() {
+    this.cancelZoom();
     this.auto=true;
     this.x=this.y=0;
     this.layout();
@@ -107,7 +168,8 @@ export class PreviewView {
       this.hideMinimap();
       return;
     }
-    if(this.auto) this.scale=Math.min(w/width,h/height);
+    const fit=this.fitScale(w,h);
+    this.scale=this.auto?fit:Math.max(this.scale,fit*minimumFitRatio);
     const cw=width*this.scale;
     const ch=height*this.scale;
     this.x=clamp(this.x,-Math.max(0,(cw-w)/2),Math.max(0,(cw-w)/2));

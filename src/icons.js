@@ -1,14 +1,10 @@
 const shapes = {
+  link:'<path d="M10 13a4 4 0 0 0 5.7.3l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7m2.7 4.7a4 4 0 0 0-5.7-.3l-3 3a4 4 0 0 0 5.7 5.7l1.7-1.7"/>',
   more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   home:'<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M9 21v-7h6v7"/>',
   copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   'move-horizontal':'<path d="M3 12h18m-14-4-4 4 4 4m10-8 4 4-4 4"/>',
-  'panel-left-close':'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16m7-11-3 3 3 3"/>',
-  'panel-left-open':'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16m4-11 3 3-3 3"/>',
-  'panel-right-close':'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16M8 9l3 3-3 3"/>',
-  'panel-right-open':'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16m-4-11-3 3 3 3"/>',
-  'panel-bottom-close':'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15h18M9 8l3 3 3-3"/>',
-  'panel-bottom-open':'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15h18m-12-4 3-3 3 3"/>',
+  'panel-toggle':'<rect x="2.5" y="4.5" width="19" height="15" rx="3.5"/><rect class="panel-toggle-indicator" x="6" y="8" width="3.5" height="8" rx="1.5" fill="currentColor" stroke="none"/>',
 
   chevron:'<path d="m6 9 6 6 6-6"/>', film:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4m-4 6h4m10-6h4m-4 6h4"/>',
   music:'<path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="18" cy="16" rx="3" ry="2"/>',

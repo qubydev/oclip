@@ -2,21 +2,28 @@ import {icon} from './icons.js';
 import {mediaPreview} from './media-previews.js';
 import {compositionAt} from './playback.js';
 
-export function renderProjects(container,projects,actions) {
+const projectDate=new Intl.DateTimeFormat(undefined,{dateStyle:'medium'});
+const projectName=new Intl.Collator(undefined,{sensitivity:'base',numeric:true});
+
+export function renderProjects(container,projects,actions,{query='',sort='recent'}={}) {
   container.replaceChildren();
-  if(!projects.length) {
-    const empty=document.createElement('p');
+  const matches=projects.filter(project=>project.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  if(sort==='name') matches.sort((a,b)=>projectName.compare(a.name,b.name)||b.modified-a.modified);
+  if(!matches.length) {
+    const empty=document.createElement('div');
     empty.className='home-empty';
-    empty.textContent='No projects yet.';
+    empty.innerHTML=icon(projects.length?'search':'film')+'<p></p>';
+    empty.querySelector('p').textContent=projects.length?'No matching projects':'No projects yet';
     container.append(empty);
     return;
   }
-  for(const project of projects) {
+  for(const project of matches) {
     const card=document.createElement('article');
     card.className='home-project';
     card.innerHTML='<button class="home-open" type="button"><span class="home-thumbnail"></span><span class="home-project-meta"><strong></strong><time></time></span></button>'+
       '<button class="icon-button home-more" type="button" title="Project options" aria-expanded="false">'+icon('more')+'</button>'+
       '<div class="home-project-menu" popover><button type="button" data-duplicate autofocus>'+icon('copy')+'Duplicate</button>'+
+      '<button type="button" data-collect>'+icon('folder')+'Collect project files</button>'+
       '<button type="button" class="home-delete" data-delete>'+icon('trash')+'Delete</button></div>';
     const open=card.querySelector('.home-open');
     open.onclick=()=>actions.open(project.id);
@@ -26,13 +33,13 @@ export function renderProjects(container,projects,actions) {
     const date=new Date(project.modified);
     const time=card.querySelector('time');
     time.dateTime=date.toISOString();
-    time.textContent=new Intl.DateTimeFormat(undefined,{dateStyle:'medium'}).format(date);
+    time.textContent=projectDate.format(date);
     const thumbnail=card.querySelector('.home-thumbnail');
     thumbnail.innerHTML=icon('film');
     if(project.thumbnail) {
       const image=new Image();
       image.alt='';
-      image.loading='lazy';
+      // Start loading immediately: the preview is inserted only after it loads.
       image.onload=()=>thumbnail.replaceChildren(image);
       image.src=project.thumbnail;
     }
@@ -52,6 +59,10 @@ export function renderProjects(container,projects,actions) {
     menu.querySelector('[data-duplicate]').onclick=()=>{
       menu.hidePopover();
       actions.duplicate(project.id);
+    };
+    menu.querySelector('[data-collect]').onclick=()=>{
+      menu.hidePopover();
+      actions.collect(project.id);
     };
     menu.querySelector('[data-delete]').onclick=()=>{
       menu.hidePopover();

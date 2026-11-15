@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "oclip.editor",
-    "productName": "oclip",
+    "productName": "Oclip",
     "files": [
       "index.html",
       "src/**/*",

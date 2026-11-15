@@ -1,5 +1,6 @@
 const {app, BrowserWindow, Menu, dialog, ipcMain, protocol, shell} = require('electron');
-const {readFile, writeFile, appendFile, stat, rename, rm, mkdir, readdir} = require('node:fs/promises');
+const {readFile, writeFile, appendFile, stat, rename, rm, mkdir, readdir, mkdtemp, copyFile, rmdir} = require('node:fs/promises');
+const {isDeepStrictEqual} = require('node:util');
 const {createReadStream, watch} = require('node:fs');
 const {Readable} = require('node:stream');
 const {randomUUID} = require('node:crypto');
@@ -8,6 +9,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const development = !app.isPackaged && process.argv.includes('--oclip-dev');
 const media = new Map();
+const mediaByPath=new Map();
 const types = {png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', webp:'image/webp', gif:'image/gif', bmp:'image/bmp', mp4:'video/mp4', webm:'video/webm', mov:'video/quicktime', m4v:'video/mp4', wav:'audio/wav', mp3:'audio/mpeg', ogg:'audio/ogg', m4a:'audio/mp4', aac:'audio/aac', flac:'audio/flac'};
 const mediaExtensions = Object.keys(types);
 const audioExtensions = mediaExtensions.filter(extension => types[extension].startsWith('audio/'));
@@ -15,15 +17,20 @@ const bundledAssets = new Set(['assets/nightfall.png','assets/violet.png','asset
 const bundledTypes = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
 const pngIcon = path.join(root,'assets','oclip.png');
 const windowIcon = process.platform === 'win32' ? path.join(root,'assets','oclip.ico') : pngIcon;
-const projects = [{name:'oclip project', extensions:['oclip']}];
+const projects = [{name:'Oclip project', extensions:['oclip']}];
 const origin = 'oclip://editor';
 protocol.registerSchemesAsPrivileged([{scheme:'oclip', privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
 
 async function register(file) {
   const type = types[path.extname(file).slice(1).toLowerCase()];
   if (!type || !path.isAbsolute(file) || !(await stat(file)).isFile()) throw Error('Unsupported media file.');
-  const key = randomUUID();
-  media.set(key, {file,type});
+  const normalized=path.normalize(file);
+  let key=mediaByPath.get(normalized);
+  if(!key) {
+    key=randomUUID();
+    mediaByPath.set(normalized,key);
+    media.set(key,{file:normalized,type});
+  }
   return {name:path.basename(file), path:file, kind:type.split('/')[0], url:origin + '/media/' + key};
 }
 
@@ -64,12 +71,22 @@ function projectForDisk(project) {
   }))};
 }
 
-async function loadProject(project) {
+async function loadProject(project, file) {
   if(!project||project.version!==1||!Array.isArray(project.assets)) throw Error('Unsupported project.');
   for(const asset of project.assets) {
     if(!asset||typeof asset!=='object') throw Error('Invalid media record.');
     if(typeof asset.path==='string'&&asset.path) {
-      try { asset.url=(await register(asset.path)).url; }
+      try {
+        if(!path.isAbsolute(asset.path)) {
+          if(!file) throw Error('Missing project directory.');
+          const folder=path.dirname(file);
+          const resolved=path.resolve(folder,asset.path);
+          const relative=path.relative(folder,resolved);
+          if(path.isAbsolute(relative)||relative==='..'||relative.startsWith('..'+path.sep)) throw Error('Invalid relative media path.');
+          asset.path=resolved;
+        }
+        asset.url=(await register(asset.path)).url;
+      }
       catch { asset.url=''; }
     } else {
       const bundled=asset.bundled??asset.url;
@@ -120,7 +137,7 @@ app.whenReady().then(() => {
     const [file] = result.filePaths;
     if ((await stat(file)).size > 10_000_000) throw Error('Project file is too large.');
     const {thumbnail,...data}=JSON.parse(await readFile(file,'utf8'));
-    const project=await loadProject(data);
+    const project=await loadProject(data,file);
     return {file,project,managed:path.dirname(file)===projectFolder};
   });
   const savePaths = new WeakMap();
@@ -160,7 +177,8 @@ app.whenReady().then(() => {
   handle('projects-create',async (_win,project)=>createManaged(projectForDisk(project)));
   handle('projects-open',async (_win,id)=>{
     const {thumbnail,...project}=await managedRead(id);
-    return {file:managedFile(id),project:await loadProject(project),managed:true};
+    const file=managedFile(id);
+    return {file,project:await loadProject(project,file),managed:true};
   });
   handle('projects-duplicate',async (_win,id)=>{
     const project=await managedRead(id);
@@ -168,6 +186,41 @@ app.whenReady().then(() => {
   });
   handle('projects-delete',async (_win,id)=>{
     await shell.trashItem(managedFile(id));
+  });
+  handle('projects-collect',async (win,id)=>{
+    const project=await managedRead(id);
+    const choice=await dialog.showOpenDialog(win,{title:'Choose where to save the project copy',properties:['openDirectory']});
+    if(choice.canceled||!choice.filePaths.length) return null;
+    const title=String(project.name||'Oclip project').replace(/[^\w -]/g,'_').trim().slice(0,70)||'Oclip project';
+    const folder=await mkdtemp(path.join(choice.filePaths[0],title+'-'));
+    const mediaFolder=path.join(folder,'media');
+    const copied=new Map();
+    const file=path.join(folder,'Project.oclip');
+    try {
+      await mkdir(mediaFolder);
+      for(const asset of project.assets) {
+        if(!asset.path) {
+          if(bundledAssets.has(asset.bundled)) continue;
+          throw Error('Locate missing media before collecting the project: '+asset.name);
+        }
+        const source=path.resolve(path.dirname(managedFile(id)),asset.path);
+        if(!copied.has(source)) {
+          const name=(copied.size+1)+'-'+path.basename(source);
+          const destination=path.join(mediaFolder,name);
+          copied.set(source,destination);
+          try {await copyFile(source,destination);}
+          catch {throw Error('Could not copy '+asset.name+'. Check that the source file is available.');}
+        }
+        asset.path=path.relative(folder,copied.get(source)).split(path.sep).join('/');
+      }
+      await atomicWrite(file,JSON.stringify(project,null,2));
+      return {folder,file};
+    } catch(error) {
+      for(const destination of copied.values()) await rm(destination,{force:true}).catch(()=>{});
+      await rmdir(mediaFolder).catch(()=>{});
+      await rmdir(folder).catch(()=>{});
+      throw error;
+    }
   });
   const recoveryFile=path.join(app.getPath('userData'),'recovery.json');
   let recoveryWrite=Promise.resolve();
@@ -183,8 +236,19 @@ app.whenReady().then(() => {
     let checkpoint;
     try { checkpoint=JSON.parse(await readFile(recoveryFile,'utf8')); }
     catch(error) { if(error.code==='ENOENT') return null; throw error; }
-    return {...checkpoint,managed:typeof checkpoint.file==='string'&&path.dirname(checkpoint.file)===projectFolder,
-      project:await loadProject(checkpoint.project)};
+    const managed=typeof checkpoint.file==='string'&&path.dirname(checkpoint.file)===projectFolder;
+    if(managed) {
+      const id=path.basename(checkpoint.file,'.oclip');
+      let saved;
+      try {saved=await managedRead(id);}
+      catch(error) {if(error.code==='ENOENT') return {...checkpoint,file:null,managed:false,project:await loadProject(checkpoint.project)};throw error;}
+      const {thumbnail,...content}=saved;
+      if(isDeepStrictEqual(content,checkpoint.project)) {
+        await rm(recoveryFile,{force:true});
+        return null;
+      }
+    }
+    return {...checkpoint,managed,project:await loadProject(checkpoint.project,checkpoint.file)};
   });
   handle('relink', async (win,name)=>{
     const result=await dialog.showOpenDialog(win,{title:'Locate '+String(name),properties:['openFile'],
@@ -271,7 +335,7 @@ app.whenReady().then(() => {
   });
 
   function createWindow() {
-    const window = new BrowserWindow({icon:windowIcon,titleBarStyle:'hidden',titleBarOverlay:{color:'#17181b',symbolColor:'#c9cdd5',height:45},width:1480,height:960,minWidth:960,minHeight:680,backgroundColor:'#111215',title:'oclip',webPreferences:{preload:path.join(__dirname,'preload.cjs'),sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
+    const window = new BrowserWindow({icon:windowIcon,titleBarStyle:'hidden',titleBarOverlay:{color:'#17181b',symbolColor:'#c9cdd5',height:45},width:1480,height:960,minWidth:960,minHeight:680,backgroundColor:'#111215',title:'Oclip',webPreferences:{preload:path.join(__dirname,'preload.cjs'),sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
     if (process.platform === 'win32') {
       window.setAppDetails({appId:'oclip.editor',appIconPath:windowIcon});
     }

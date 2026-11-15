@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('desktop', {
   createProject: project => ipcRenderer.invoke('projects-create',project),
   openManagedProject: id => ipcRenderer.invoke('projects-open',id),
   duplicateProject: id => ipcRenderer.invoke('projects-duplicate',id),
+  collectProject: id => ipcRenderer.invoke('projects-collect',id),
   deleteProject: id => ipcRenderer.invoke('projects-delete',id),
   setProjectPath: file => ipcRenderer.invoke('project-path',file),
   checkpoint: (project,view) => ipcRenderer.invoke('checkpoint',project,view),

@@ -1,4 +1,4 @@
-import {findClip, splitClip, timing, planGroupMove} from './model.js';
+import {findClip, splitClip, timing, planGroupMove, applyGroupMove} from './model.js';
 
 export function splitSelection(project, ids, frame) {
   const rightIds=new Map();
@@ -42,11 +42,16 @@ export function removeSelection(project, ids, ripple=false) {
 
 export function closeGap(project,id) {
   const context=findClip(project,id);
-  if(!context||context.track.locked) return;
+  if(!context||context.track.locked) return false;
   const {clip,track}=context;
   const preceding=track.clips.reduce((end,item)=>timing(item)<=clip.start?Math.max(end,timing(item)):end,0);
   const gap=clip.start-preceding;
-  track.clips=track.clips.map(item=>item.start>=clip.start?{...item,start:item.start-gap}:item);
+  if(!gap) return true;
+  const moving=linkedSelection(project,track.clips.filter(item=>item.start>=clip.start).map(item=>item.id));
+  const moves=planGroupMove(project,moving,-gap);
+  if(!moves||moves.some(move=>move.clip.start!==findClip(project,move.clip.id).clip.start-gap)) return false;
+  applyGroupMove(project,moves);
+  return true;
 }
 
 export function linkedSelection(project,ids) {

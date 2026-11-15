@@ -1,7 +1,9 @@
+import {togglePanelsFromShortcut,panelShortcuts} from './layout.js';
 import {splitSelection,removeSelection,closeGap,linkedSelection,planTimelineDrag} from './timeline-edits.js';
 import {planGroupMove} from './model.js';
 import {mediaPreview} from './media-previews.js';
 import {renderProjects,projectThumbnail} from './project-home.js';
+import {installSelects} from './select.js';
 import {confirmAction} from './confirm-dialog.js';
 
 import {FPS,MAX_FRAMES,MAX_TEXT_BOX_SIZE,clamp,applyGroupMove,createClip,createProject,dimensions,duration,editSpan,extractClipAudio,findClip,fittedZoom,id,pasteClipGroups,placeClip,planPlacement,timecode,timelineMetrics,timing,validateProject} from './model.js';
@@ -43,6 +45,7 @@ let exportPicking=false;
 let fileBusy=false;
 let noticeTimeout;
 let livePropertyEdit;
+let canvasDimensionsLinked=false;
 let projectFile=null;
 let managedProject=false;
 let onHome=false;
@@ -53,6 +56,7 @@ let saveError='';
 const player=new Player($('preview'),()=>{if(!playing) draw();});
 
 for(const node of document.querySelectorAll('[data-icon]')) node.innerHTML=icon(node.dataset.icon);
+installSelects();
 
 function notify(message) {
   clearTimeout(noticeTimeout);
@@ -173,6 +177,7 @@ function previewAsset(asset) {
       }
     } else media.alt=asset.name;
     assetPreview.append(media);
+    previewView.fitAsset();
     select(null);
   } else previewTransform.render();
   buttons();
@@ -182,7 +187,7 @@ function previewAsset(asset) {
 }
 
 document.addEventListener('pointerdown',event=>{
-  if(selectedAsset&&!event.target.closest('[data-asset], .asset-preview img, .asset-preview video, .asset-preview audio, .transport, #delete, #item-menu')) {
+  if(selectedAsset&&!event.target.closest('[data-asset], .asset-preview, .transport, #delete, #item-menu')) {
     previewAsset(null);
   }
 },true);
@@ -203,7 +208,9 @@ $('viewport').addEventListener('drop',event=>{
 
 function drawPlayhead() {
   $('current-time').textContent=timecode(previewFrame);
-  document.querySelectorAll('.playhead').forEach(node=>node.style.left=previewFrame*pixels+'px');
+  const position=previewFrame*pixels;
+  document.querySelectorAll('.playhead').forEach(node=>node.style.left=position+'px');
+
 }
 
 function seek(frame, scroll=false) {
@@ -287,7 +294,6 @@ function renderLibrary() {
   $('search-label').hidden=tab==='text';
   if (tab==='text') {
     grid.classList.remove('is-empty');
-    $('asset-count').textContent='';
     grid.innerHTML='<button class="text-preset" id="text-preset">'+icon('text')+' Add text layer</button>';
     $('text-preset').onclick=()=>insert(null);
     return;
@@ -295,7 +301,6 @@ function renderLibrary() {
   const search=$('asset-search').value.trim().toLowerCase();
   const assets=project.assets.filter(asset=>(tab==='audio')===(asset.kind==='audio'));
   const visible=assets.filter(asset=>asset.name.toLowerCase().includes(search));
-  $('asset-count').textContent=assets.length+' '+(assets.length===1?'item':'items');
   grid.classList.toggle('is-empty',!visible.length&&!search);
   grid.innerHTML=visible.map(asset=>{
     const thumbnail=asset.kind==='image' && asset.url ? '<img src="'+escape(asset.url)+'" alt="">' : asset.kind==='video' && asset.url ? '<video src="'+escape(asset.url)+'#t=0.01" muted preload="metadata" aria-hidden="true"></video>' : icon(kindIcon[asset.kind]);
@@ -326,11 +331,15 @@ function field(label,key,value,attrs='') {
 const isTextDimension=key=>key==='textWidth'||key==='textHeight';
 
 function numberField(label,key,value,min,max,disabled=false) {
+  return '<div class="field"><label for="property-'+key+'">'+label+'</label>'+
+    numberControl(label,key,value,min,max,disabled)+'</div>';
+}
+
+function numberControl(label,key,value,min,max,disabled=false) {
   const disabledAttribute=disabled?' disabled':'';
   const auto=isTextDimension(key)?' placeholder="Auto" title="Clear the value to return to Auto"':'';
-  return '<div class="field"><label for="property-'+key+'">'+label+'</label>'+
-    '<div class="number-control"><input id="property-'+key+'" data-field="'+key+'" type="number" min="'+min+'" max="'+max+'" step="1" value="'+(value??'')+'"'+auto+disabledAttribute+'>'+
-    (disabled?'':'<span class="number-scrub" aria-hidden="true" title="Drag left or right to adjust">'+icon('move-horizontal')+'</span>')+'</div></div>';
+  return '<div class="number-control"><input aria-label="'+label+'" id="property-'+key+'" data-field="'+key+'" type="number" min="'+min+'" max="'+max+'" step="1" value="'+(value??'')+'"'+auto+disabledAttribute+'>'+
+    (disabled?'':'<span class="number-scrub" aria-hidden="true" title="Drag left or right to adjust">'+icon('move-horizontal')+'</span>')+'</div>';
 }
 
 function numberValue(input,clipId) {
@@ -345,8 +354,14 @@ function numberValue(input,clipId) {
   return clamp(Math.round(key==='textWidth'?width:height),Number(input.min),Number(input.max));
 }
 
-function applyProperty(next,clipId,key,value) {
+function applyProperty(next,clipId,key,value,reference=next) {
   if(!clipId) {
+    if(canvasDimensionsLinked&&(key==='width'||key==='height')) {
+      const other=key==='width'?'height':'width';
+      const ratio=reference[other]/reference[key];
+      value=clamp(value,Math.max(64,Math.ceil(64/ratio)),Math.min(3840,Math.floor(3840/ratio)));
+      next[other]=Math.round(value*ratio);
+    }
     next[key]=value;
     return next[key];
   }
@@ -374,9 +389,16 @@ function renderInspector() {
   if (isCanvas) {
     const preset=dimensions.find(([w,h])=>project.width===w&&project.height===h);
     properties.innerHTML='<section class="property-section"><h3>Frame</h3><label class="field"><span>Aspect ratio</span><select id="aspect">'+dimensions.map(([w,h,name])=>'<option value="'+w+'x'+h+'" '+(preset?.[0]===w&&preset?.[1]===h?'selected':'')+'>'+name+'</option>').join('')+'<option value="custom" '+(!preset?'selected':'')+'>Custom</option></select></label>'+
-      numberField('Width','width',project.width,64,3840)+numberField('Height','height',project.height,64,3840)+
+      '<div class="canvas-dimensions" role="group" aria-label="Dimension"><span>Dimension</span><div class="canvas-dimension-inputs">'+
+      numberControl('Width','width',project.width,64,3840)+
+      '<button id="link-canvas-dimensions" type="button" class="icon-button" aria-label="Link canvas width and height" aria-pressed="'+canvasDimensionsLinked+'" title="Link canvas width and height">'+icon('link')+'</button>'+
+      numberControl('Height','height',project.height,64,3840)+'</div></div>'+
       '<div class="field"><span>Frame rate</span><span>30 fps</span></div></section><section class="property-section"><h3>Background</h3>'+
       field('Base color','color',project.color,'type="color"')+'</section>';
+    $('link-canvas-dimensions').onclick=event=>{
+      canvasDimensionsLinked=!canvasDimensionsLinked;
+      event.currentTarget.setAttribute('aria-pressed',String(canvasDimensionsLinked));
+    };
     $('aspect').onchange=event=>{
       if(event.target.value==='custom') {properties.querySelector('[data-field=width]').focus();return;}
       const [width,height]=event.target.value.split('x').map(Number);
@@ -547,7 +569,11 @@ function startNumberScrub(event,properties,clipId) {
     if(value===requested) return;
     requested=value;
     project=draft;
-    input.value=applyProperty(draft,clipId,key,value);
+    input.value=applyProperty(draft,clipId,key,value,original);
+    if(changesFrame&&canvasDimensionsLinked&&(key==='width'||key==='height')) {
+      const other=key==='width'?'height':'width';
+      properties.querySelector('[data-field="'+other+'"]').value=draft[other];
+    }
     if(changesFrame) frameFit();
     if(changesTiming) {
       renderTimeline();
@@ -595,8 +621,8 @@ function startNumberScrub(event,properties,clipId) {
 
 function timelineScale() {
   const viewport=$('timeline-scroll');
-  const head=document.querySelector('.ruler-head')?.offsetWidth||154;
-  const available=Math.max(300,viewport.clientWidth-head);
+  const head=Number.parseFloat(getComputedStyle(viewport).getPropertyValue('--track-head'));
+  const available=Math.max(1,viewport.clientWidth-head);
   return timelineMetrics(available,duration(project),zoom);
 }
 
@@ -785,7 +811,15 @@ function insert(asset, position=previewFrame, trackId=null, appendTrack=false) {
 
 function split() {
   const next=structuredClone(project);
-  const ids=[selected,...additionalSelection].filter(Boolean);
+  const ids=linkedSelection(project,[selected,...additionalSelection].filter(Boolean));
+  if(ids.some(id=>{
+    const context=findClip(project,id);
+    return context?.track.locked&&previewFrame>context.clip.start&&previewFrame<timing(context.clip)&&
+      linkedSelection(project,[id]).length>1;
+  })) {
+    notify('Unlock linked tracks or unlink the audio before splitting.');
+    return;
+  }
   const result=splitSelection(next,ids,previewFrame);
   selected=result[0]??null;
   additionalSelection=new Set(result.slice(1));
@@ -946,7 +980,11 @@ document.addEventListener('contextmenu',event=>{
       {label:'Split at playhead',symbol:'split',run:split,disabled:$('split').disabled},
       {label:'Delete selection',symbol:'trash',run:()=>remove(),disabled:$('delete').disabled,danger:true},
       {label:'Ripple delete selection',symbol:'trash',run:()=>remove(true),disabled:$('delete').disabled,danger:true},
-      {label:'Close gap before clip',symbol:'first',run:()=>update(next=>closeGap(next,clip.id)),disabled:track.locked||!clip.start},
+      {label:'Close gap before clip',symbol:'first',run:()=>{
+        const next=structuredClone(project);
+        if(closeGap(next,clip.id)) commit(next);
+        else notify('Cannot close the gap without overlapping or moving locked clips.');
+      },disabled:track.locked||!clip.start},
     ];
     const linkedAudio=project.tracks.flatMap(item=>item.clips).filter(item=>item.audioFor===clip.id||item.id===clip.id&&item.audioFor);
     if(linkedAudio.length) actions.splice(2,0,{
@@ -1126,6 +1164,7 @@ $('browser-files').onchange=event=>{
 };
 
 function reset(next,isSample=false) {
+  canvasDimensionsLinked=false;
   previewAsset(null);
   stop();
   assetEpoch++;
@@ -1213,13 +1252,21 @@ function homeMessage(message='') {
   $('home-status').hidden=!message;
 }
 
-async function refreshHome() {
-  try {
-    renderProjects($('home-projects'),await desktop.listProjects(),{
+let homeProjects=[];
+function drawHomeProjects() {
+    $('home-tools').hidden=!homeProjects.length;
+    renderProjects($('home-projects'),homeProjects,{
       open:id=>homeAction('open',id),
       duplicate:id=>homeAction('duplicate',id),
+      collect:id=>homeAction('collect',id),
       remove:project=>homeAction('remove',project),
-    });
+    },{query:$('home-search').value,sort:$('home-sort').value});
+}
+
+async function refreshHome() {
+  try {
+    homeProjects=await desktop.listProjects();
+    drawHomeProjects();
   } catch(error) {homeMessage(error.message);}
 }
 
@@ -1265,6 +1312,11 @@ async function homeAction(action,target) {
   fileBusy=true;
   homeMessage();
   try {
+    if(action==='collect') {
+      const result=await desktop.collectProject(target);
+      if(result) homeMessage('Project and media copied to '+result.folder);
+      return;
+    }
     if(action==='duplicate'||action==='remove') {
       if(action==='duplicate') await desktop.duplicateProject(target);
       else if(await confirmAction({title:'Delete project?',description:'“'+target.name+'” will move to the Recycle Bin.',
@@ -1339,6 +1391,9 @@ desktop?.onCloseRequest(async ()=>{
 
 const grid=$('timeline-grid');
 const scroll=$('timeline-scroll');
+scroll.addEventListener('scroll',()=>{
+  scroll.classList.toggle('scrolled-from-start',scroll.scrollLeft>0);
+},{passive:true});
 grid.tabIndex=-1;
 const snapLine=document.createElement('div');
 snapLine.className='timeline-snap-line';
@@ -1904,6 +1959,7 @@ const shortcuts=[
   ['Play / pause active preview','Space'],
   ['Previous / next frame','Left / Right arrow'],
   ['Previous / next cut','Shift+Left / Right arrow'],
+  ...panelShortcuts,
   ['Nudge selection by one frame','Alt+Left / Right arrow'],
   ['Undo','Ctrl+Z'],
   ['Redo','Ctrl+Shift+Z / Ctrl+Y'],
@@ -1941,6 +1997,7 @@ document.addEventListener('keydown',event=>{
   if($('export-dialog').open||$('confirm-dialog').open) return;
   const editing=event.target.matches('input,textarea,select')||event.target.isContentEditable;
   const key=event.key.toLowerCase();
+  if(togglePanelsFromShortcut(event)) return;
   if(event.altKey) {
     if(!editing&&!drag&&!selectedAsset&&selected&&(key==='arrowleft'||key==='arrowright')) {
       event.preventDefault();
@@ -2063,6 +2120,8 @@ if(desktop) {
   $('go-home').onclick=goHome;
   $('home-new').onclick=()=>homeAction('new');
   $('home-import').onclick=()=>homeAction('import');
+  $('home-search').oninput=drawHomeProjects;
+  $('home-sort').onchange=drawHomeProjects;
   if(snapshot) {
     recoveryReady=true;
     if(onHome) void refreshHome();

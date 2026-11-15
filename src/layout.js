@@ -20,6 +20,28 @@ const panels={
 };
 const names={library:'Media panel',viewer:'Player',inspector:'Properties',timeline:'Timeline'};
 const controls={};
+const shortcuts={Digit1:'library',Digit2:'inspector',Digit3:'timeline'};
+export const panelShortcuts=[
+  ...Object.entries(shortcuts).map(([code,key])=>['Toggle '+names[key],'Alt+Shift+'+code.slice(-1)]),
+  ['Toggle all panels','Alt+Shift+0'],
+];
+
+export function togglePanelsFromShortcut(event) {
+  if(!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey) return false;
+  const panel=shortcuts[event.code];
+  if(!panel&&event.code!=='Digit0') return false;
+  event.preventDefault();
+  if(event.repeat) return true;
+  if(panel) toggle(panel);
+  else {
+    const keys=Object.keys(panels);
+    const collapse=keys.some(key=>!state[key]);
+    for(const key of keys) state[key]=collapse;
+    apply();
+    save();
+  }
+  return true;
+}
 let gesture=null;
 
 function save() {
@@ -29,14 +51,15 @@ function save() {
 function sizes() {
   const width=workspace.clientWidth;
   const center=320;
-  let left=state.library?58:Math.max(220,Math.min(460,state.left));
+  const railWidth=parseFloat(getComputedStyle(panels.library).getPropertyValue('--library-rail'));
+  let left=state.library?railWidth:Math.max(220,Math.min(460,state.left));
   let right=state.inspector?40:Math.max(200,Math.min(420,state.right));
   let excess=Math.max(0,left+right+center+12-width);
-  const takeLeft=Math.min(excess,Math.max(0,left-(state.library?58:220)));
+  const takeLeft=Math.min(excess,Math.max(0,left-(state.library?railWidth:220)));
   left-=takeLeft;
   excess-=takeLeft;
   right-=Math.min(excess,Math.max(0,right-(state.inspector?40:200)));
-  const bottom=state.timeline?39:Math.max(160,Math.min(state.bottom,main.clientHeight-226));
+  const bottom=state.timeline?39:Math.max(160,Math.min(state.bottom,main.clientHeight-242));
   return {left,right,bottom,center};
 }
 
@@ -50,8 +73,6 @@ function apply() {
     button.setAttribute('aria-expanded',String(!state[key]));
     button.setAttribute('aria-label',(state[key]?'Expand ':'Collapse ')+names[key]);
     button.title=button.getAttribute('aria-label');
-    const side={library:'left',inspector:'right',timeline:'bottom'}[key];
-    button.innerHTML=icon('panel-'+side+'-'+(state[key]?'open':'close'));
   }
   for(const [key,handle] of Object.entries(handles)) {
     const limits=range(key);
@@ -72,6 +93,7 @@ function toggle(key, collapsed=!state[key]) {
 for(const [key,panel] of Object.entries(panels)) {
   const button=document.createElement('button');
   button.className='icon-button panel-toggle';
+  button.innerHTML=icon('panel-toggle');
   button.type='button';
   panel.id ||= 'panel-'+key;
   button.setAttribute('aria-controls',panel.id);
@@ -95,7 +117,6 @@ for(const key of ['left','right','bottom']) {
   handle.setAttribute('role','separator');
   handle.setAttribute('aria-label','Resize '+names[panelFor[key]]);
   handle.setAttribute('aria-orientation',key==='bottom'?'horizontal':'vertical');
-  handle.title='Drag to resize. Double-click to reset.';
   handles[key]=handle;
   if(key==='left') panels.library.after(handle);
   else if(key==='right') panels.inspector.before(handle);
@@ -147,7 +168,7 @@ for(const key of ['left','right','bottom']) {
 
 function range(key) {
   const value=sizes();
-  if(key==='bottom') return {min:160,max:Math.max(160,main.clientHeight-226)};
+  if(key==='bottom') return {min:160,max:Math.max(160,main.clientHeight-242)};
   const opposite=key==='left'?value.right:value.left;
   const min=key==='left'?220:200;
   return {min,max:Math.max(min,Math.min(key==='left'?460:420,workspace.clientWidth-opposite-value.center-12))};

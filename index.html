@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'">
-<title>oclip</title>
+<title>Oclip</title>
 <link rel="icon" href="assets/oclip.svg" type="image/svg+xml">
 <link rel="stylesheet" href="src/editor.css">
 <link rel="stylesheet" href="src/workspace.css">
 </head>
 <body>
 <section id="home-screen" class="project-home" aria-label="Project home" hidden>
-  <header class="home-bar"><img class="mark" src="assets/oclip.svg" width="24" height="24" alt="">oclip</header>
+  <header class="home-bar"><span class="oclip-lockup"><img class="mark" src="assets/oclip.svg" width="24" height="24" alt="Oclip"></span></header>
   <div class="home-content">
     <div class="home-heading">
       <h1>Projects</h1>
@@ -20,12 +20,19 @@
         <button id="home-new" class="primary"><span data-icon="plus"></span>New project</button>
       </div>
     </div>
+    <div id="home-tools" class="home-tools" hidden>
+      <label class="home-search"><span data-icon="search"></span><input id="home-search" type="search" placeholder="Search projects" aria-label="Search projects"></label>
+      <select id="home-sort" aria-label="Sort projects">
+        <option value="recent">Recently edited</option>
+        <option value="name">Name A&#8211;Z</option>
+      </select>
+    </div>
     <p id="home-status" role="status" hidden></p>
     <div id="home-projects" class="home-projects"></div>
   </div>
 </section>
 <header class="appbar">
-  <div class="brand"><img class="mark" src="assets/oclip.svg" width="24" height="24" alt="">oclip<span class="separator"></span><button id="go-home" type="button" class="plain" title="Back to projects"><span data-icon="home"></span>Home</button></div>
+  <div class="brand"><span class="oclip-lockup"><img class="mark" src="assets/oclip.svg" width="24" height="24" alt="Oclip"></span><button id="go-home" type="button" class="plain" title="Back to projects"><span data-icon="home"></span>Home</button></div>
   <div class="project-title"><span data-icon="film"></span><input id="project-name" aria-label="Project name" maxlength="80"></div>
   <div class="app-actions"><button id="shortcuts" class="icon-button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts" data-icon="keyboard"></button><button id="export" class="primary"><span data-icon="upload"></span>Export</button></div>
   <dialog id="shortcut-dialog" aria-labelledby="shortcut-title"><div class="shortcut-header"><h2 id="shortcut-title">Keyboard shortcuts</h2><input id="shortcut-search" type="search" placeholder="Search shortcuts…" aria-label="Search keyboard shortcuts"><button id="close-shortcuts" class="icon-button" aria-label="Close keyboard shortcuts" data-icon="close"></button></div><div id="shortcut-list"></div></dialog>
@@ -33,9 +40,9 @@
 <main>
   <div class="workspace">
     <aside class="panel library" aria-label="Asset library">
-      <nav class="library-tabs" aria-label="Library categories"><button class="active" data-tab="media"><span data-icon="film"></span>Media</button><button data-tab="audio"><span data-icon="music"></span>Audio</button><button data-tab="text"><span data-icon="text"></span>Text</button></nav>
+      <nav class="library-tabs" aria-label="Library categories"><button class="active" data-tab="media" aria-label="Media" title="Media"><span data-icon="film"></span></button><button data-tab="audio" aria-label="Audio" title="Audio"><span data-icon="music"></span></button><button data-tab="text" aria-label="Text" title="Text"><span data-icon="text"></span></button></nav>
       <div class="library-body">
-        <div class="panel-heading"><h2 id="library-title">Project media</h2><span id="asset-count"></span></div>
+        <div class="panel-heading"><h2 id="library-title">Project media</h2></div>
         <button id="import" class="import"><span data-icon="plus"></span>Import media</button>
         <input id="browser-files" type="file" hidden multiple accept="video/*,image/*,audio/*">
         <label id="search-label" class="search"><span data-icon="search"></span><input id="asset-search" placeholder="Search media" aria-label="Search media"></label>
@@ -54,7 +61,7 @@
     </aside>
   </div>
   <section class="panel timeline-panel" aria-label="Timeline">
-    <div class="timeline-heading"><h2><span data-icon="timeline"></span>Timeline</h2><div class="edit-tools"><button class="icon-button active" id="snap" aria-label="Toggle snapping" title="Snap to playhead and clip edges" data-icon="magnet" aria-pressed="true"></button><span class="separator"></span><button class="icon-button" id="undo" aria-label="Undo" title="Undo (Ctrl Z)" data-icon="undo"></button><button class="icon-button" id="redo" aria-label="Redo" title="Redo (Ctrl Shift Z)" data-icon="redo"></button><span class="separator"></span><button class="icon-button" id="split" aria-label="Split at playhead" title="Split at playhead (S)" data-icon="split"></button><button class="icon-button" id="delete" aria-label="Delete layer" title="Delete layer (Delete)" data-icon="trash"></button><button class="icon-button" id="mute-clip" aria-label="Mute clip" title="Mute clip" data-icon="volume" aria-pressed="false" disabled></button></div><div class="zoom-tools"><button id="zoom-out" class="icon-button" aria-label="Zoom out" data-icon="minus"></button><input id="zoom" type="range" min="-140" max="100" value="44" aria-label="Timeline zoom"><button id="zoom-in" class="icon-button" aria-label="Zoom in" data-icon="plus"></button><span class="separator"></span><button id="zoom-fit" class="icon-button" aria-label="Fit timeline" title="Fit timeline" data-icon="frame"></button></div></div>
+    <div class="timeline-heading"><h2><span data-icon="timeline"></span>Timeline</h2><div class="edit-tools"><button class="icon-button active" id="snap" aria-label="Toggle snapping" title="Snap to playhead and clip edges" data-icon="magnet" aria-pressed="true"></button><button class="icon-button" id="undo" aria-label="Undo" title="Undo (Ctrl Z)" data-icon="undo"></button><button class="icon-button" id="redo" aria-label="Redo" title="Redo (Ctrl Shift Z)" data-icon="redo"></button><button class="icon-button" id="split" aria-label="Split at playhead" title="Split at playhead (S)" data-icon="split"></button><button class="icon-button" id="delete" aria-label="Delete layer" title="Delete layer (Delete)" data-icon="trash"></button><button class="icon-button" id="mute-clip" aria-label="Mute clip" title="Mute clip" data-icon="volume" aria-pressed="false" disabled></button></div><div class="zoom-tools"><button id="zoom-out" class="icon-button" aria-label="Zoom out" data-icon="minus"></button><input id="zoom" type="range" min="-140" max="100" value="44" aria-label="Timeline zoom"><button id="zoom-in" class="icon-button" aria-label="Zoom in" data-icon="plus"></button><button id="zoom-fit" class="icon-button" aria-label="Fit timeline" title="Fit timeline" data-icon="frame"></button></div></div>
     <div class="timeline-scroll" id="timeline-scroll"><div id="timeline-grid" class="timeline-grid"></div></div>
   </section>
 </main>
@@ -95,6 +102,5 @@
   </form>
 </dialog>
 <script type="module" src="src/editor.js"></script>
-<script type="module" src="src/layout.js"></script>
 </body>
 </html>

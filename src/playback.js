@@ -160,6 +160,28 @@ export function exportFormats(project) {
   ].filter(format=>MediaRecorder.isTypeSupported(format.mimeType));
 }
 
+function waitForMedia(element,event,signal,start) {
+  signal.throwIfAborted();
+  return new Promise((resolve,reject)=>{
+    const controller=new AbortController();
+    const done=error=>{
+      controller.abort();
+      clearTimeout(timeout);
+      if(error) reject(error);
+      else resolve();
+    };
+    const timeout=setTimeout(()=>done(Error('Timed out preparing source media.')),12000);
+    const options={once:true,signal:controller.signal};
+    signal.addEventListener('abort',()=>done(signal.reason),options);
+    element.addEventListener(event,()=>done(),options);
+    element.addEventListener('error',()=>done(Error('A source file could not be decoded.')),options);
+    try {
+      if(element.error) done(Error('A source file could not be decoded.'));
+      else start?.();
+    } catch(error) {done(error);}
+  });
+}
+
 export async function record(project,frames,mimeType,onProgress,signal,writeChunk,videoBitsPerSecond=10_000_000) {
   const canvas=document.createElement('canvas');
   const player=new Player(canvas);
@@ -167,6 +189,8 @@ export async function record(project,frames,mimeType,onProgress,signal,writeChun
   let stream;
   let animation;
   let recorder;
+  const preparation=new AbortController();
+  const preparing=AbortSignal.any([signal,preparation.signal]);
   let writes=Promise.resolve();
   let writeError;
   try {
@@ -180,21 +204,12 @@ export async function record(project,frames,mimeType,onProgress,signal,writeChun
     await Promise.all([...player.sources.values()].map(({element})=>{
       if (element instanceof HTMLImageElement) return element.decode();
       if (element.readyState>=2) return null;
-      return new Promise((resolve,reject)=>{
-        const controller = new AbortController();
-        const complete = error => {
-          controller.abort();
-          clearTimeout(timeout);
-          signal.removeEventListener('abort',abort);
-          if (error) reject(error); else resolve();
-        };
-        const abort = () => complete(new DOMException('Export canceled','AbortError'));
-        const timeout = setTimeout(()=>complete(Error('Timed out loading source media.')),12000);
-        signal.addEventListener('abort',abort,{once:true});
-        element.addEventListener('loadeddata',()=>complete(),{signal:controller.signal});
-        element.addEventListener('error',()=>complete(Error('A source file could not be decoded.')),{signal:controller.signal});
-        if (element.error) complete(Error('A source file could not be decoded.'));
-      });
+      return waitForMedia(element,'loadeddata',preparing);
+    }));
+    await Promise.all(compositionAt(project,0).map(({clip,asset,sourceTime})=>{
+      const element=player.source(clip,asset)?.element;
+      if(!(element instanceof HTMLMediaElement)||Math.abs(element.currentTime-sourceTime)<=.001) return;
+      return waitForMedia(element,'seeked',preparing,()=>{element.currentTime=sourceTime;});
     }));
     if (signal.aborted) throw new DOMException('Export canceled','AbortError');
     player.render(project,0);
@@ -214,19 +229,20 @@ export async function record(project,frames,mimeType,onProgress,signal,writeChun
       });
     };
     return await new Promise((resolve,reject)=>{
-      const abort = () => {
+      const fail=error=>{
+        signal.removeEventListener('abort',abort);
+        cancelAnimationFrame(animation);
         if (recorder.state!=='inactive') recorder.stop();
-        reject(new DOMException('Export canceled','AbortError'));
+        reject(error);
       };
+      const abort=()=>fail(signal.reason);
       signal.addEventListener('abort',abort,{once:true});
-      recorder.onerror=event=>{
-        signal.removeEventListener('abort',abort);
-        reject(event.error);
-      };
+      recorder.onerror=event=>fail(event.error);
       recorder.onstop=async ()=>{
-        signal.removeEventListener('abort',abort);
         await writes;
-        if(writeError) reject(writeError);
+        signal.removeEventListener('abort',abort);
+        if(signal.aborted) reject(signal.reason);
+        else if(writeError) reject(writeError);
         else if(writeChunk) resolve(null);
         else if(!chunks.length) reject(Error('The encoder did not produce any video.'));
         else resolve(new Blob(chunks,{type:chunks[0].type||recorder.mimeType}));
@@ -235,18 +251,23 @@ export async function record(project,frames,mimeType,onProgress,signal,writeChun
       const start=performance.now();
       let last=-1;
       const draw=now=>{
-        const frame=Math.floor((now-start)*FPS/1000);
-        if (frame>=frames) {recorder.stop();return;}
-        if (frame!==last) {
-          last=frame;
-          player.render(project,frame,true);
-          onProgress(frame/frames);
+        try {
+          const frame=Math.floor((now-start)*FPS/1000);
+          if (frame>=frames) {recorder.stop();return;}
+          if (frame!==last) {
+            last=frame;
+            player.render(project,frame,true);
+            onProgress(frame/frames);
+          }
+          animation=requestAnimationFrame(draw);
+        } catch(error) {
+          fail(error);
         }
-        animation=requestAnimationFrame(draw);
       };
       draw(start);
     });
   } finally {
+    preparation.abort();
     cancelAnimationFrame(animation);
     if(recorder) recorder.ondataavailable=null;
     await writes;
