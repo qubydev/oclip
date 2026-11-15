@@ -25,7 +25,7 @@ test('collected projects reopen after moving, and a saved checkpoint does not pr
   const window=new Window();
   const electron={
     app:{whenReady:()=>Promise.resolve(),getPath:()=>projectStore,on(){},isPackaged:true},
-    BrowserWindow:Window,Menu:{setApplicationMenu(){}},
+    BrowserWindow:Window,screen:{getPrimaryDisplay:()=>({workArea:{x:0,y:0,width:1920,height:1040}})},Menu:{setApplicationMenu(){}},
     dialog:{showOpenDialog:async()=>({canceled:false,filePaths:[selectedPath]})},
     ipcMain:{handle:(name,callback)=>handlers.set(name,callback)},
     protocol:{registerSchemesAsPrivileged(){},handle(){}},

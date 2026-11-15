@@ -22,6 +22,9 @@
       "desktop/**/*.cjs",
       "assets/**/*"
     ],
+    "nsis": {
+      "include": "desktop/installer.nsh"
+    },
     "win": {
       "icon": "assets/oclip.ico",
       "artifactName": "oclip-Setup-${version}-${arch}.${ext}"
