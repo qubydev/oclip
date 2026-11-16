@@ -1,3 +1,4 @@
+import type {Asset, TrackKind} from '../src/types.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {MAX_FRAMES,applyGroupMove,planGroupMove,createClip,createProject,createTrack,editSpan,extractClipAudio,fittedZoom,id,pasteClipGroups,splitClip,timecode,timelineMetrics,validateProject} from '../src/model.js';
@@ -32,7 +33,7 @@ test('drag snapping skips a blocked candidate and picks a valid nearby edge',()=
 
 test('linked extracted audio follows its matching half after splitting both clips',()=>{
   const project=createProject();
-  const video={id:id(),name:'source.mp4',kind:'video',url:'assets/source.mp4',frames:60};
+  const video: Asset={id:id(),name:'source.mp4',kind:'video',url:'assets/source.mp4',frames:60};
   const track=createTrack('video');
   const source=createClip(video);
   project.assets.push(video);
@@ -90,7 +91,7 @@ test('pasting multiple clips aligns the group to the playhead and preserves spac
   const project=createProject();
   const video=createTrack('video');
   const titles=createTrack('text');
-  const asset={id:id(),kind:'video',name:'Scene.mp4',frames:180,url:'assets/scene.mp4'};
+  const asset: Asset={id:id(),kind:'video',name:'Scene.mp4',frames:180,url:'assets/scene.mp4'};
   const first={...createClip(asset,20),length:40,in:6,muted:true};
   const second={...createClip(asset,70),length:30};
   const title={...createClip(null,35),length:10};
@@ -120,8 +121,8 @@ test('extracting trimmed video audio preserves sync and mutes only the source cl
   const project=createProject();
   const video=createTrack('video');
   const occupied=createTrack('audio');
-  const asset={id:id(),kind:'video',name:'Scene.mp4',frames:200,url:'assets/scene.mp4'};
-  const music={id:id(),kind:'audio',name:'Music.wav',frames:200,url:'assets/music.wav'};
+  const asset: Asset={id:id(),kind:'video',name:'Scene.mp4',frames:200,url:'assets/scene.mp4'};
+  const music: Asset={id:id(),kind:'audio',name:'Music.wav',frames:200,url:'assets/music.wav'};
   const clip={...createClip(asset,40),in:15,length:70,volume:65};
   const other={...createClip(asset,120),length:50};
   video.clips.push(clip,other);
@@ -143,7 +144,7 @@ test('extracting trimmed video audio preserves sync and mutes only the source cl
 
 test('move finds the nearest nonoverlapping slot',()=>{
   const track=createTrack('video');
-  const asset={id:id(),kind:'image',name:'Image',frames:40};
+  const asset: Asset={url:'',id:id(),kind:'image',name:'Image',frames:40};
   track.clips.push(createClip(asset,60));
   const clip=createClip(asset);
   assert.equal(editSpan(track,clip,'move',31,asset).start,20);
@@ -152,7 +153,7 @@ test('move finds the nearest nonoverlapping slot',()=>{
 
 test('trimming respects source in-point, media duration and adjacent clips',()=>{
   const track=createTrack('audio');
-  const asset={id:id(),kind:'audio',name:'Audio',frames:90};
+  const asset: Asset={url:'',id:id(),kind:'audio',name:'Audio',frames:90};
   const clip={...createClip(asset,100),in:12,length:30};
   track.clips.push(clip,{...createClip(asset,155),length:15});
   const left=editSpan(track,clip,'left',0,asset);
@@ -162,7 +163,7 @@ test('trimming respects source in-point, media duration and adjacent clips',()=>
 });
 
 test('split preserves source continuity at the exact frame',()=>{
-  const asset={id:id(),kind:'video',name:'Shot',frames:90};
+  const asset: Asset={url:'',id:id(),kind:'video',name:'Shot',frames:90};
   const clip={...createClip(asset,60),in:10,length:70};
   const [left,right]=splitClip(clip,83);
   assert.deepEqual([left.length,right.start,right.in,right.length],[23,83,33,47]);
@@ -191,8 +192,8 @@ test('an overlapping drop creates an upper track and keeps both clip start times
   const project=createProject();
   assert.deepEqual(project.tracks,[]);
   assert.equal(validateProject(project),true);
-  project.tracks=['text','video','audio'].map(kind=>createTrack(kind));
-  const asset={id:id(),kind:'image',name:'Image',frames:40,url:'assets/image.png'};
+  project.tracks=(['text','video','audio'] as TrackKind[]).map(kind=>createTrack(kind));
+  const asset: Asset={id:id(),kind:'image',name:'Image',frames:40,url:'assets/image.png'};
   project.assets.push(asset);
   const video=project.tracks[1];
   const original=createClip(asset,30);

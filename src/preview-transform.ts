@@ -1,8 +1,26 @@
+import type {Clip, Project} from './types.js';
+import type {Player} from './playback.js';
+import type {PreviewView} from './preview-view.js';
+interface TransformActions {
+  state(): {project: Project; frame: number; selected: string | null};
+  editText(id: string): void; stop(): void; select(id: string | null): void;
+  showTextWidth(width?: number): void; draw(): void;
+  commit(id: string, values: Partial<Clip>): void;
+}
+interface TransformBox {cx: number; cy: number; width: number; height: number}
+interface Gesture {
+  id: number; clip: Clip; start: {x: number; y: number}; box: TransformBox;
+  corner?: string; original: {x: number; y: number; scale: number; textWidth?: number};
+}
 import {clamp,MAX_TEXT_BOX_SIZE,timing} from './model.js';
 import {layoutText} from './text-layout.js';
 
 export class PreviewTransform {
-  constructor(view,player,actions) {
+  view: PreviewView; player: Player; actions: TransformActions;
+  gesture: Gesture | null;
+  overlay: HTMLDivElement; vertical: HTMLDivElement; horizontal: HTMLDivElement;
+
+  constructor(view: PreviewView,player: Player,actions: TransformActions) {
     this.view=view;
     this.player=player;
     this.actions=actions;
@@ -26,7 +44,7 @@ export class PreviewTransform {
     view.viewport.addEventListener('pointercancel',event=>this.end(event,true));
     view.viewport.addEventListener('lostpointercapture',event=>this.end(event,true));
     view.viewport.addEventListener('dblclick',event=>{
-      if(event.button!==0||event.altKey||view.map.contains(event.target)||view.viewport.classList.contains('showing-asset')) return;
+      if(event.button!==0||event.altKey||view.map.contains((event.target as HTMLInputElement))||view.viewport.classList.contains('showing-asset')) return;
       const hit=this.hitTest(this.point(event));
       if(hit?.clip.kind==='text'&&!hit.track.locked) this.actions.editText(hit.clip.id);
     });
@@ -46,7 +64,7 @@ export class PreviewTransform {
       .map(clip=>({clip,track})):[]);
   }
 
-  bounds(clip) {
+  bounds(clip: Clip): TransformBox | null {
     const {project}=this.actions.state();
     let width,height;
     if(clip.kind==='text') {
@@ -57,8 +75,8 @@ export class PreviewTransform {
     } else {
       const asset=project.assets.find(item=>item.id===clip.assetId);
       const media=this.player.source(clip,asset)?.element;
-      const w=media?.naturalWidth||media?.videoWidth;
-      const h=media?.naturalHeight||media?.videoHeight;
+      const w=media instanceof HTMLImageElement?media.naturalWidth:media instanceof HTMLVideoElement?media.videoWidth:0;
+      const h=media instanceof HTMLImageElement?media.naturalHeight:media instanceof HTMLVideoElement?media.videoHeight:0;
       if(!w||!h) return null;
       const fit=Math.min(project.width/w,project.height/h);
       width=w*fit;
@@ -82,12 +100,12 @@ export class PreviewTransform {
 
   start(event) {
     if(this.view.viewport.classList.contains('showing-asset')) return;
-    if(event.button!==0||(event.altKey&&!event.target.dataset.corner)||this.view.map.contains(event.target)) return;
+    if(event.button!==0||(event.altKey&&!(event.target as HTMLInputElement).dataset.corner)||this.view.map.contains((event.target as HTMLInputElement))) return;
     event.preventDefault();
     this.actions.stop();
     const point=this.point(event);
     const {selected}=this.actions.state();
-    const corner=event.target.dataset.corner;
+    const corner=(event.target as HTMLInputElement).dataset.corner;
     const hit=corner?this.layers().find(item=>item.clip.id===selected):this.hitTest(point);
     this.actions.select(hit?.clip.id??null);
     if(!hit||hit.track.locked) return;

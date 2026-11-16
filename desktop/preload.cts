@@ -1,5 +1,6 @@
-const {contextBridge, ipcRenderer} = require('electron');
-contextBridge.exposeInMainWorld('desktop', {
+import type {DesktopApi} from '../src/desktop-api.js';
+const {contextBridge, ipcRenderer} = require('electron') as typeof import('electron');
+const desktop: DesktopApi = {
   platform: process.platform,
   onCloseRequest: callback => { ipcRenderer.on('request-close', () => callback()); },
   onDevReload: callback => { ipcRenderer.on('dev-reload', () => callback()); },
@@ -24,4 +25,5 @@ contextBridge.exposeInMainWorld('desktop', {
   beginExport: (name,extension) => ipcRenderer.invoke('begin-export',name,extension),
   exportChunk: (id,bytes) => ipcRenderer.invoke('export-chunk',id,bytes),
   finishExport: (id,commit) => ipcRenderer.invoke('finish-export',id,commit),
-});
+};
+contextBridge.exposeInMainWorld('desktop', desktop);

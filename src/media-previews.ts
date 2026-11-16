@@ -4,7 +4,7 @@ let pending=Promise.resolve();
 async function thumbnail(url) {
   const video=document.createElement('video');
   try {
-    await new Promise((resolve,reject)=>{
+    await new Promise<void>((resolve,reject)=>{
       const timeout=setTimeout(()=>reject(Error('Preview timed out')),5000);
       video.onloadeddata=()=>{clearTimeout(timeout);resolve();};
       video.onerror=()=>{clearTimeout(timeout);reject(Error('Preview unavailable'));};

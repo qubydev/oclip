@@ -1,3 +1,4 @@
+import type {Asset, ClipGroup, Project} from './types.js';
 import {togglePanelsFromShortcut,panelShortcuts} from './layout.js';
 import {splitSelection,removeSelection,closeGap,linkedSelection,planTimelineDrag} from './timeline-edits.js';
 import {planGroupMove} from './model.js';
@@ -14,20 +15,84 @@ import {PreviewView} from './preview-view.js';
 import {sampleProject} from './sample.js';
 import {layoutText} from './text-layout.js';
 
-const $=name=>document.getElementById(name);
+interface EditorElements {
+  'preview': HTMLElementTagNameMap['canvas'];
+  'status': HTMLElementTagNameMap['div'];
+  'viewport': HTMLElementTagNameMap['div'];
+  'properties': HTMLElementTagNameMap['div'];
+  'current-time': HTMLElementTagNameMap['span'];
+  'total-time': HTMLElementTagNameMap['span'];
+  'play': HTMLElementTagNameMap['button'];
+  'timeline-scroll': HTMLElementTagNameMap['div'];
+  'asset-grid': HTMLElementTagNameMap['div'];
+  'library-title': HTMLElementTagNameMap['h2'];
+  'import': HTMLElementTagNameMap['button'];
+  'search-label': HTMLElementTagNameMap['label'];
+  'asset-search': HTMLElementTagNameMap['input'];
+  'canvas-tab': HTMLElementTagNameMap['button'];
+  'clip-tab': HTMLElementTagNameMap['button'];
+  'timeline-grid': HTMLElementTagNameMap['div'];
+  'undo': HTMLElementTagNameMap['button'];
+  'redo': HTMLElementTagNameMap['button'];
+  'delete': HTMLElementTagNameMap['button'];
+  'split': HTMLElementTagNameMap['button'];
+  'mute-clip': HTMLElementTagNameMap['button'];
+  'export': HTMLElementTagNameMap['button'];
+  'project-name': HTMLElementTagNameMap['input'];
+  'empty-preview': HTMLElementTagNameMap['div'];
+  'confirm-dialog': HTMLElementTagNameMap['dialog'];
+  'item-menu': HTMLElementTagNameMap['div'];
+  'browser-files': HTMLElementTagNameMap['input'];
+  'home-screen': HTMLElementTagNameMap['section'];
+  'home-new': HTMLElementTagNameMap['button'];
+  'home-status': HTMLElementTagNameMap['p'];
+  'home-tools': HTMLElementTagNameMap['div'];
+  'home-projects': HTMLElementTagNameMap['div'];
+  'home-search': HTMLElementTagNameMap['input'];
+  'home-sort': HTMLElementTagNameMap['select'];
+  'zoom': HTMLElementTagNameMap['input'];
+  'export-format': HTMLElementTagNameMap['select'];
+  'export-message': HTMLElementTagNameMap['p'];
+  'export-location': HTMLElementTagNameMap['output'];
+  'export-quality': HTMLElementTagNameMap['select'];
+  'choose-export': HTMLElementTagNameMap['button'];
+  'start-export': HTMLElementTagNameMap['button'];
+  'close-export': HTMLElementTagNameMap['button'];
+  'cancel-export': HTMLElementTagNameMap['button'];
+  'export-details': HTMLElementTagNameMap['p'];
+  'export-progress': HTMLElementTagNameMap['label'];
+  'export-dialog': HTMLElementTagNameMap['dialog'];
+  'export-phase': HTMLElementTagNameMap['span'];
+  'fullscreen': HTMLElementTagNameMap['button'];
+  'monitor-audio': HTMLElementTagNameMap['button'];
+  'snap': HTMLElementTagNameMap['button'];
+  'zoom-in': HTMLElementTagNameMap['button'];
+  'zoom-out': HTMLElementTagNameMap['button'];
+  'zoom-fit': HTMLElementTagNameMap['button'];
+  'shortcut-search': HTMLElementTagNameMap['input'];
+  'shortcut-list': HTMLElementTagNameMap['div'];
+  'shortcuts': HTMLElementTagNameMap['button'];
+  'shortcut-dialog': HTMLElementTagNameMap['dialog'];
+  'close-shortcuts': HTMLElementTagNameMap['button'];
+  'go-home': HTMLElementTagNameMap['button'];
+  'home-import': HTMLElementTagNameMap['button'];
+}
+function $<K extends keyof EditorElements>(name: K): EditorElements[K];
+function $(name: string): HTMLInputElement;
+function $(name: string): HTMLElement { return document.getElementById(name); }
 const desktop=window.desktop;
 if (desktop) document.documentElement.dataset.desktop=desktop.platform;
 const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const kindIcon={image:'image',video:'film',audio:'music',text:'text'};
-const history=[];
-const future=[];
+const history: Project[]=[];
+const future: Project[]=[];
 let project=desktop ? createProject() : sampleProject();
 let saved=JSON.stringify(project);
 let sample=!desktop;
 let previewFrame=sample ? FPS*3 : 0;
 let selected=null;
-let additionalSelection=new Set();
-let clipClipboard=[];
+let additionalSelection=new Set<string>();
+let clipClipboard: ClipGroup[]=[];
 let selectedAsset=null;
 let panel='canvas';
 let tab='media';
@@ -55,7 +120,7 @@ let saveInFlight=null;
 let saveError='';
 const player=new Player($('preview'),()=>{if(!playing) draw();});
 
-for(const node of document.querySelectorAll('[data-icon]')) node.innerHTML=icon(node.dataset.icon);
+for(const node of document.querySelectorAll<HTMLElement>('[data-icon]')) node.innerHTML=icon(node.dataset.icon);
 installSelects();
 
 function notify(message) {
@@ -116,12 +181,12 @@ const previewTransform=new PreviewTransform(previewView,player,{
   select,stop,draw,
   showTextWidth:value=>{
     const input=$('property-textWidth');
-    if(input) input.value=value??'';
+    if(input) input.value=value==null?'':String(value);
   },
   editText:clipId=>{
     select(clipId);
     $('properties').closest('.inspector').dispatchEvent(new Event('reveal-properties'));
-    $('properties').querySelector('textarea[data-field="text"]')?.focus();
+    $('properties').querySelector<HTMLElement>('textarea[data-field="text"]')?.focus();
   },
   commit:(clipId,values)=>update(next=>{
     const context=findClip(next,clipId);
@@ -152,7 +217,7 @@ function refreshTransport() {
   $('current-time').textContent=timecode(asset ? Math.floor((media?.currentTime??0)*FPS) : previewFrame);
   $('total-time').textContent=timecode(frames);
   $('play').innerHTML=icon(active?'pause':'play');
-  $('play').setAttribute('aria-label',active?'Pause':'Play');
+  $('play').setAttribute('aria-label',String(active?'Pause':'Play'));
   for(const id of ['play','first','last','back','forward']) $(id).disabled=!frames;
 }
 
@@ -181,13 +246,13 @@ function previewAsset(asset) {
     select(null);
   } else previewTransform.render();
   buttons();
-  document.querySelectorAll('[data-asset]').forEach(button=>{
+  document.querySelectorAll<HTMLElement>('[data-asset]').forEach(button=>{
     button.setAttribute('aria-pressed',String(button.dataset.asset===selectedAsset));
   });
 }
 
 document.addEventListener('pointerdown',event=>{
-  if(selectedAsset&&!event.target.closest('[data-asset], .asset-preview, .transport, #delete, #item-menu')) {
+  if(selectedAsset&&!(event.target as HTMLInputElement).closest('[data-asset], .asset-preview, .transport, #delete, #item-menu')) {
     previewAsset(null);
   }
 },true);
@@ -209,7 +274,7 @@ $('viewport').addEventListener('drop',event=>{
 function drawPlayhead() {
   $('current-time').textContent=timecode(previewFrame);
   const position=previewFrame*pixels;
-  document.querySelectorAll('.playhead').forEach(node=>node.style.left=position+'px');
+  document.querySelectorAll<HTMLElement>('.playhead').forEach(node=>node.style.left=position+'px');
 
 }
 
@@ -226,7 +291,7 @@ function seek(frame, scroll=false) {
   if (scroll) {
     const viewport=$('timeline-scroll');
     const x=previewFrame*pixels;
-    const usable=viewport.clientWidth-(document.querySelector('.ruler-head')?.offsetWidth||0);
+    const usable=viewport.clientWidth-(document.querySelector<HTMLElement>('.ruler-head')?.offsetWidth||0);
     if (x>viewport.scrollLeft+usable-8) viewport.scrollLeft=x-usable+15;
     else if (x<viewport.scrollLeft) viewport.scrollLeft=x;
   }
@@ -237,7 +302,7 @@ function stop(redraw=true) {
   playing=false;
   cancelAnimationFrame(raf);
   $('play').innerHTML=icon('play');
-  $('play').setAttribute('aria-label','Play');
+  $('play').setAttribute('aria-label',String('Play'));
   if(redraw) draw();
 }
 
@@ -257,7 +322,7 @@ function togglePlay() {
   playingFrom=previewFrame;
   playbackStart=performance.now();
   $('play').innerHTML=icon('pause');
-  $('play').setAttribute('aria-label','Pause');
+  $('play').setAttribute('aria-label',String('Pause'));
   function tick(now) {
     if (!playing) return;
     const frame=playingFrom+Math.floor((now-playbackStart)*FPS/1000);
@@ -279,14 +344,14 @@ function togglePlay() {
 }
 
 let draggedAsset=null;
-function clearDrop() {document.querySelector('.drop-target, .new-track-target')?.classList.remove('drop-target','new-track-target');}
+function clearDrop() {document.querySelector<HTMLElement>('.drop-target, .new-track-target')?.classList.remove('drop-target','new-track-target');}
 
 function renderLibrary() {
   const grid=$('asset-grid');
-  for (const button of document.querySelectorAll('[data-tab]')) {
+  for (const button of document.querySelectorAll<HTMLElement>('[data-tab]')) {
     const active=button.dataset.tab===tab;
     button.classList.toggle('active',active);
-    button.setAttribute('aria-pressed',active);
+    button.setAttribute('aria-pressed',String(active));
   }
   $('library-title').textContent={media:'Project media',audio:'Project audio',text:'Text layers'}[tab];
   $('import').hidden=tab==='text';
@@ -308,7 +373,7 @@ function renderLibrary() {
   }).join('') || (search?'<p class="empty-library">No matching media</p>':'<button class="media-empty" id="media-empty">'+icon('upload')+'<strong>Import your media</strong><span>Choose '+(tab==='audio'?'audio files':'videos or images')+' to start editing</span><span class="empty-action">Browse files</span></button>');
   const empty=$('media-empty');
   if(empty) empty.onclick=importFiles;
-  grid.querySelectorAll('[data-asset]').forEach(button=>{
+  grid.querySelectorAll<HTMLElement>('[data-asset]').forEach(button=>{
     button.setAttribute('aria-pressed',String(button.dataset.asset===selectedAsset));
     button.onclick=()=>{
       const asset=project.assets.find(asset=>asset.id===button.dataset.asset);
@@ -381,8 +446,8 @@ function renderInspector() {
   const isCanvas=panel==='canvas'||!context;
   $('canvas-tab').classList.toggle('active',isCanvas);
   $('clip-tab').classList.toggle('active',!isCanvas);
-  $('canvas-tab').setAttribute('aria-pressed',isCanvas);
-  $('clip-tab').setAttribute('aria-pressed',!isCanvas);
+  $('canvas-tab').setAttribute('aria-pressed',String(isCanvas));
+  $('clip-tab').setAttribute('aria-pressed',String(!isCanvas));
   $('clip-tab').disabled=!context;
   const properties=$('properties');
   const clipId=isCanvas?null:selected;
@@ -397,11 +462,11 @@ function renderInspector() {
       field('Base color','color',project.color,'type="color"')+'</section>';
     $('link-canvas-dimensions').onclick=event=>{
       canvasDimensionsLinked=!canvasDimensionsLinked;
-      event.currentTarget.setAttribute('aria-pressed',String(canvasDimensionsLinked));
+      (event.currentTarget as HTMLInputElement).setAttribute('aria-pressed',String(canvasDimensionsLinked));
     };
     $('aspect').onchange=event=>{
-      if(event.target.value==='custom') {properties.querySelector('[data-field=width]').focus();return;}
-      const [width,height]=event.target.value.split('x').map(Number);
+      if((event.target as HTMLInputElement).value==='custom') {properties.querySelector<HTMLElement>('[data-field=width]').focus();return;}
+      const [width,height]=(event.target as HTMLInputElement).value.split('x').map(Number);
       update(next=>Object.assign(next,{width,height}));
     };
   } else {
@@ -437,7 +502,7 @@ function renderInspector() {
   }
   properties.onpointerdown=event=>startNumberScrub(event,properties,clipId);
   properties.onkeydown=event=>{
-    const input=event.target;
+    const input=(event.target as HTMLInputElement);
     if(input.matches('input[type="number"]')&&(event.key==='ArrowUp'||event.key==='ArrowDown')) {
       event.preventDefault();
       event.stopPropagation();
@@ -448,24 +513,24 @@ function renderInspector() {
       const value=clamp(current+direction*(event.shiftKey?10:1),Number(input.min),Number(input.max));
       if(value===input.valueAsNumber) return;
       const scrollTop=properties.scrollTop;
-      input.value=value;
+      input.value=String(value);
       if(key==='fontSize') input.dispatchEvent(new Event('input',{bubbles:true}));
       input.dispatchEvent(new Event('change',{bubbles:true}));
-      properties.querySelector('[data-field="'+key+'"]')?.focus({preventScroll:true});
+      properties.querySelector<HTMLElement>('[data-field="'+key+'"]')?.focus({preventScroll:true});
       properties.scrollTop=scrollTop;
       return;
     }
-    if(event.key==='Enter'&&event.target.matches('input')) {
+    if(event.key==='Enter'&&(event.target as HTMLInputElement).matches('input')) {
       event.preventDefault();
-      event.target.blur();
+      (event.target as HTMLInputElement).blur();
     }
   };
   properties.oninput=event=>{
-    const input=event.target;
+    const input=(event.target as HTMLInputElement);
     if(!input.matches('[data-field="color"], textarea[data-field="text"], [data-field="fontSize"]')||input.disabled) return;
     const key=input.dataset.field;
     const value=key==='fontSize'?input.valueAsNumber:input.value;
-    if(key==='fontSize'&&(!Number.isInteger(value)||value<Number(input.min)||value>Number(input.max))) return;
+    if(key==='fontSize'&&(!Number.isInteger(value)||Number(value)<Number(input.min)||Number(value)>Number(input.max))) return;
     if(livePropertyEdit?.input!==input||livePropertyEdit.project!==project) {
       const next=structuredClone(project);
       const target=clipId?findClip(next,clipId)?.clip:next;
@@ -479,7 +544,7 @@ function renderInspector() {
     draw();
   };
   properties.onchange=event=>{
-    const input=event.target;
+    const input=(event.target as HTMLInputElement);
     const key=input.dataset.field;
     if(!key) return;
     if(livePropertyEdit?.input===input&&livePropertyEdit.project===project) {
@@ -504,10 +569,10 @@ function renderInspector() {
 }
 
 function startNumberScrub(event,properties,clipId) {
-  if(event.button!==0||!event.isPrimary||!event.target.closest('.number-scrub')) return;
+  if(event.button!==0||!event.isPrimary||!(event.target as HTMLInputElement).closest('.number-scrub')) return;
   event.preventDefault();
-  const key=event.target.closest('.number-control').querySelector('input').dataset.field;
-  if(properties.contains(document.activeElement)) document.activeElement.blur();
+  const key=(event.target as HTMLInputElement).closest('.number-control').querySelector<HTMLElement>('input').dataset.field;
+  if(properties.contains((document.activeElement as HTMLElement))) (document.activeElement as HTMLElement).blur();
   const input=properties.querySelector('input[data-field="'+key+'"]');
   if(!input||input.disabled) return;
   const control=input.closest('.number-control');
@@ -689,14 +754,14 @@ function renderTimeline() {
       '<div class="track-lane" data-track="'+escape(track.id)+'">'+track.clips.map(clip=>clipHTML(clip,track)).join('')+'<i class="playhead"></i></div>').join('')+
     '<div class="track-head track-gutter" aria-hidden="true"></div>'+
     '<div class="track-drop-space" data-new-track>'+(project.tracks.length?'':'Drop media here')+'<i class="playhead"></i></div>';
-  const focused=document.activeElement?.closest('[data-clip]')?.dataset.clip;
+  const focused=((document.activeElement as HTMLElement)?.closest('[data-clip]') as HTMLElement)?.dataset.clip;
   patchTimeline(grid,markup);
-  if(focused&&document.activeElement===document.body) {
-    grid.querySelector('[data-clip="'+CSS.escape(focused)+'"]')?.focus({preventScroll:true});
+  if(focused&&(document.activeElement as HTMLElement)===document.body) {
+    grid.querySelector<HTMLElement>('[data-clip="'+CSS.escape(focused)+'"]')?.focus({preventScroll:true});
   }
   drawPlayhead();
   const assets=new Map(project.assets.map(asset=>[asset.id,asset]));
-  for(const node of grid.querySelectorAll('[data-preview-asset]')) {
+  for(const node of grid.querySelectorAll<HTMLElement>('[data-preview-asset]')) {
     const asset=assets.get(node.dataset.previewAsset);
     if(!asset?.url) continue;
     void mediaPreview(asset).then(url=>{
@@ -737,7 +802,7 @@ function buttons() {
   $('redo').disabled=!future.length;
   const editableClip=context&&!context.track.locked;
   $('delete').disabled=!selectedAsset&&!editableClip&&![...additionalSelection].some(id=>findClip(project,id)?.track.locked===false);
-  $('delete').setAttribute('aria-label',selectedAsset?'Remove media':'Delete layer');
+  $('delete').setAttribute('aria-label',String(selectedAsset?'Remove media':'Delete layer'));
   $('split').disabled=![selected,...additionalSelection].some(id=>{
     const item=findClip(project,id);
     return item&&!item.track.locked&&previewFrame>item.clip.start&&previewFrame<timing(item.clip);
@@ -783,10 +848,10 @@ function select(clipId,others=[]) {
   additionalSelection=new Set(others);
   previewTransform.render();
   panel=clipId?'clip':'canvas';
-  document.querySelectorAll('[data-clip]').forEach(node=>{
+  document.querySelectorAll<HTMLElement>('[data-clip]').forEach(node=>{
     const active=isClipSelected(node.dataset.clip);
     node.classList.toggle('selected',active);
-    node.setAttribute('aria-pressed',active);
+    node.setAttribute('aria-pressed',String(active));
   });
   renderInspector();
   buttons();
@@ -895,13 +960,13 @@ async function removeAsset(assetId) {
 
 const itemMenu=$('item-menu');
 let menuInvoker;
-const pendingAudioExtractions=new Set();
+const pendingAudioExtractions=new Set<string>();
 
 function videoHasAudio(url) {
   return new Promise((resolve,reject)=>{
     const video=document.createElement('video');
     const timeout=setTimeout(()=>done(Error('Could not read the video audio tracks.')),10000);
-    function done(error,hasAudio) {
+    function done(error,hasAudio?) {
       clearTimeout(timeout);
       video.onloadeddata=video.onerror=null;
       video.removeAttribute('src');
@@ -952,13 +1017,13 @@ async function extractAudio(clipId,asset) {
 }
 
 document.addEventListener('contextmenu',event=>{
-  const node=event.target.closest('[data-asset], [data-clip]');
+  const node=(event.target as HTMLInputElement).closest('[data-asset], [data-clip]');
   if(!node) return;
   event.preventDefault();
   if(itemMenu.matches(':popover-open')) itemMenu.hidePopover();
   let actions;
-  if(node.dataset.asset) {
-    const asset=project.assets.find(item=>item.id===node.dataset.asset);
+  if((node as HTMLElement).dataset.asset) {
+    const asset=project.assets.find(item=>item.id===(node as HTMLElement).dataset.asset);
     if(!asset) return;
     previewAsset(asset);
     actions=[
@@ -970,7 +1035,7 @@ document.addEventListener('contextmenu',event=>{
       {label:'Find missing media in folder',symbol:'folder',run:relinkFolder},
     );
   } else {
-    const context=findClip(project,node.dataset.clip);
+    const context=findClip(project,(node as HTMLElement).dataset.clip);
     if(!context) return;
     previewAsset(null);
     if(!isClipSelected(context.clip.id)) select(context.clip.id);
@@ -1022,7 +1087,7 @@ document.addEventListener('contextmenu',event=>{
   itemMenu.showPopover();
   itemMenu.style.left=clamp(atPointer?event.clientX:rect.left,4,Math.max(4,innerWidth-itemMenu.offsetWidth-4))+'px';
   itemMenu.style.top=clamp(atPointer?event.clientY:rect.bottom,4,Math.max(4,innerHeight-itemMenu.offsetHeight-4))+'px';
-  itemMenu.querySelector('button:enabled')?.focus({preventScroll:true});
+  itemMenu.querySelector<HTMLElement>('button:enabled')?.focus({preventScroll:true});
 });
 itemMenu.addEventListener('keydown',event=>{
   event.stopPropagation();
@@ -1032,8 +1097,8 @@ itemMenu.addEventListener('keydown',event=>{
     menuInvoker.focus({preventScroll:true});
     return;
   }
-  const items=[...itemMenu.querySelectorAll('button:enabled')];
-  const index=items.indexOf(document.activeElement);
+  const items=[...itemMenu.querySelectorAll<HTMLElement>('button:enabled')];
+  const index=items.indexOf((document.activeElement as HTMLElement));
   if(event.key==='ArrowDown'||event.key==='ArrowUp'||event.key==='Home'||event.key==='End') {
     event.preventDefault();
     const next=event.key==='Home'?0:event.key==='End'?items.length-1:
@@ -1042,7 +1107,7 @@ itemMenu.addEventListener('keydown',event=>{
   }
 });
 
-function mediaFrames(asset) {
+function mediaFrames(asset): Promise<number> {
   if(asset.kind==='image') {
     const image=new Image();
     image.src=asset.url;
@@ -1051,7 +1116,7 @@ function mediaFrames(asset) {
   return new Promise((resolve,reject)=>{
     const media=document.createElement(asset.kind);
     const timeout=setTimeout(()=>done(Error('Media metadata timed out.')),10000);
-    function done(error) {
+    function done(error?) {
       clearTimeout(timeout);
       media.onloadedmetadata=media.onerror=null;
       const frames=Math.floor(media.duration*FPS+1e-6);
@@ -1152,7 +1217,7 @@ async function importFiles() {
 }
 
 $('browser-files').onchange=event=>{
-  const picker=event.currentTarget;
+  const picker=(event.currentTarget as HTMLInputElement);
   const audioOnly=picker.dataset.audioOnly==='true';
   const files=[...picker.files].map(file=>{
     const extension=file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
@@ -1198,7 +1263,7 @@ function saveProjectView() {
   try {localStorage.setItem('oclip.view:'+projectFile,JSON.stringify(projectView()));} catch {}
 }
 
-function restoreProjectView(view) {
+function restoreProjectView(view?) {
   if(!view&&projectFile) {
     try {view=JSON.parse(localStorage.getItem('oclip.view:'+projectFile));} catch {}
   }
@@ -1308,7 +1373,7 @@ async function autosave() {
   }
 }
 
-async function homeAction(action,target) {
+async function homeAction(action,target?) {
   if(fileBusy||!recoveryReady) return;
   fileBusy=true;
   homeMessage();
@@ -1329,7 +1394,7 @@ async function homeAction(action,target) {
       await enterProject(await desktop.openManagedProject(target));
       return;
     }
-    const entry=action==='import'?await desktop.openProject():{project:createProject()};
+    const entry=action==='import'?await desktop.openProject():{project:createProject(),file:null,managed:false};
     if(!entry) return;
     if(!validateProject(entry.project)) throw Error('The project contains invalid or unsupported data.');
     if(entry.managed) {
@@ -1398,10 +1463,10 @@ scroll.addEventListener('scroll',()=>{
 grid.tabIndex=-1;
 const snapLine=document.createElement('div');
 snapLine.className='timeline-snap-line';
-snapLine.setAttribute('aria-hidden','true');
+snapLine.setAttribute('aria-hidden',String('true'));
 function showTimelineSnap(frame) {
   if(frame==null) {snapLine.remove();return;}
-  const ruler=grid.querySelector('.ruler');
+  const ruler=grid.querySelector<HTMLElement>('.ruler');
   snapLine.style.left=(ruler.offsetLeft+frame*pixels)+'px';
   if(!snapLine.isConnected) grid.append(snapLine);
 }
@@ -1411,7 +1476,7 @@ let pointerPosition;
 function scrollDuringDrag() {
   if(!drag||!pointerPosition) {edgeFrame=null;return;}
   const rect=scroll.getBoundingClientRect();
-  const left=grid.querySelector('.ruler-head').getBoundingClientRect().right;
+  const left=grid.querySelector<HTMLElement>('.ruler-head').getBoundingClientRect().right;
   const {clientX:x,clientY:y}=pointerPosition;
   const velocity=(value,min,max)=>clamp((value-max+30)/2,0,18)-clamp((min+30-value)/2,0,18);
   const previousX=scroll.scrollLeft;
@@ -1422,7 +1487,7 @@ function scrollDuringDrag() {
   edgeFrame=requestAnimationFrame(scrollDuringDrag);
 }
 function frameAt(event,lane) {
-  const timeArea=lane.hasAttribute('data-new-track')?grid.querySelector('.ruler'):lane;
+  const timeArea=lane.hasAttribute('data-new-track')?grid.querySelector<HTMLElement>('.ruler'):lane;
   return (event.clientX-timeArea.getBoundingClientRect().left)/pixels;
 }
 
@@ -1445,26 +1510,26 @@ function snapPosition(value,clip=null,mode='scrub') {
 }
 
 grid.onpointerdown=event=>{
-  if(event.button!==0||event.target.closest('button')) return;
-  if(event.target.closest('.track-gutter')) {select(null);return;}
-  const node=event.target.closest('.clip');
-  const lane=event.target.closest('.ruler,.track-lane,[data-new-track]');
+  if(event.button!==0||(event.target as HTMLInputElement).closest('button')) return;
+  if((event.target as HTMLInputElement).closest('.track-gutter')) {select(null);return;}
+  const node=(event.target as HTMLInputElement).closest('.clip');
+  const lane=(event.target as HTMLInputElement).closest('.ruler,.track-lane,[data-new-track]');
   if(!lane) return;
   stop();
   if(node) {
-    const context=findClip(project,node.dataset.clip);
+    const context=findClip(project,(node as HTMLElement).dataset.clip);
     if(event.shiftKey||event.ctrlKey||event.metaKey) {
       const ids=new Set([selected,...additionalSelection].filter(Boolean));
       if(ids.has(context.clip.id)) ids.delete(context.clip.id); else ids.add(context.clip.id);
       const list=[...ids];
       select(list[0]??null,list.slice(1));
-      node.focus({preventScroll:true});
+      (node as HTMLElement).focus({preventScroll:true});
       return;
     }
     if(!isClipSelected(context.clip.id)) select(context.clip.id);
-    node.focus({preventScroll:true});
+    (node as HTMLElement).focus({preventScroll:true});
     if(context.track.locked) return;
-    const mode=event.target.dataset.mode||'move';
+    const mode=(event.target as HTMLInputElement).dataset.mode||'move';
     drag={node,lane,context,mode,scrollLeft:scroll.scrollLeft,pointer:event.pointerId,x:event.clientX,y:event.clientY,edit:context.clip,target:context.track};
     const moving=mode==='move'?linkedSelection(project,[selected,...additionalSelection]):[];
     if(moving.length>1) {
@@ -1489,15 +1554,15 @@ grid.onpointerdown=event=>{
 
 function updateMarquee(event) {
   const rect=grid.getBoundingClientRect();
-  const ruler=grid.querySelector('.ruler').getBoundingClientRect();
-  const x=clamp(event.clientX,Math.max(ruler.left,grid.querySelector('.ruler-head').getBoundingClientRect().right),rect.right)-rect.left;
+  const ruler=grid.querySelector<HTMLElement>('.ruler').getBoundingClientRect();
+  const x=clamp(event.clientX,Math.max(ruler.left,grid.querySelector<HTMLElement>('.ruler-head').getBoundingClientRect().right),rect.right)-rect.left;
   const y=clamp(event.clientY,ruler.bottom,rect.bottom)-rect.top;
   if(!drag.moved&&Math.hypot(x-drag.x,y-drag.y)<3) return;
   drag.moved=true;
   if(!drag.box) {
     drag.box=document.createElement('div');
     drag.box.className='timeline-marquee';
-    drag.box.setAttribute('aria-hidden','true');
+    drag.box.setAttribute('aria-hidden',String('true'));
     grid.append(drag.box);
   }
   const left=Math.min(x,drag.x);
@@ -1505,7 +1570,7 @@ function updateMarquee(event) {
   const right=Math.max(x,drag.x);
   const bottom=Math.max(y,drag.y);
   Object.assign(drag.box.style,{left:left+'px',top:top+'px',width:(right-left)+'px',height:(bottom-top)+'px'});
-  const hits=[...grid.querySelectorAll('[data-clip]')].filter(node=>{
+  const hits=[...grid.querySelectorAll<HTMLElement>('[data-clip]')].filter(node=>{
     const clip=node.getBoundingClientRect();
     return clip.right>rect.left+left&&clip.left<rect.left+right&&clip.bottom>rect.top+top&&clip.top<rect.top+bottom;
   }).map(node=>node.dataset.clip);
@@ -1521,7 +1586,7 @@ function showDragClip(node,lane,clip) {
     preview.removeAttribute('data-clip');
     preview.removeAttribute('tabindex');
     preview.classList.add('clip-drag-preview');
-    preview.setAttribute('aria-hidden','true');
+    preview.setAttribute('aria-hidden',String('true'));
     drag.previews.set(node,preview);
     node.classList.add('clip-drag-source');
   }
@@ -1542,7 +1607,7 @@ grid.onpointermove=event=>{
   if(drag.group) {
     const ids=drag.group.map(item=>item.clip.id);
     const hovered=document.elementFromPoint(event.clientX,event.clientY)?.closest('.track-lane,[data-new-track]');
-    const targetIndex=project.tracks.findIndex(track=>track.id===hovered?.dataset.track);
+    const targetIndex=project.tracks.findIndex(track=>track.id===(hovered as HTMLElement)?.dataset.track);
     const sourceIndex=project.tracks.indexOf(context.track);
     const trackOffset=targetIndex<0?0:targetIndex-sourceIndex;
     const delta=Math.round((event.clientX-drag.x+scroll.scrollLeft-drag.scrollLeft)/pixels);
@@ -1557,16 +1622,16 @@ grid.onpointermove=event=>{
     if(append&&moves) hovered.classList.add('new-track-target');
     for(const item of drag.group) {
       const move=moves?.find(move=>move.clip.id===item.clip.id)??item;
-      const element=grid.querySelector('[data-clip="'+CSS.escape(item.clip.id)+'"]');
-      const lane=grid.querySelector('[data-track="'+CSS.escape(move.track.id)+'"]')??
-        grid.querySelector('[data-track="'+CSS.escape(item.track.id)+'"]');
+      const element=grid.querySelector<HTMLElement>('[data-clip="'+CSS.escape(item.clip.id)+'"]');
+      const lane=grid.querySelector<HTMLElement>('[data-track="'+CSS.escape(move.track.id)+'"]')??
+        grid.querySelector<HTMLElement>('[data-track="'+CSS.escape(item.track.id)+'"]');
       showDragClip(element,lane,move.clip);
     }
     notify(moves?'':'This group cannot fit on those tracks.');
     return;
   }
   const hovered=document.elementFromPoint(event.clientX,event.clientY)?.closest('.track-lane, [data-new-track]');
-  const destination=project.tracks.find(track=>track.id===hovered?.dataset.track);
+  const destination=project.tracks.find(track=>track.id===(hovered as HTMLElement)?.dataset.track);
   const target=mode==='move'&&destination?destination:context.track;
   const delta=(event.clientX-drag.x+scroll.scrollLeft-drag.scrollLeft)/pixels;
   const base=mode==='right'?timing(context.clip):context.clip.start;
@@ -1589,7 +1654,7 @@ grid.onpointermove=event=>{
   }
   const edge=mode==='right'?timing(edit):edit.start;
   notify((mode==='move'?'Start ':'Trim ') + timecode(edge) + '   |   Duration ' + timecode(edit.length));
-  const targetLane=grid.querySelector('[data-track="'+CSS.escape(target.id)+'"]');
+  const targetLane=grid.querySelector<HTMLElement>('[data-track="'+CSS.escape(target.id)+'"]');
   if(placement&&!placement.track) (appendTrack?hovered:targetLane).classList.add('new-track-target');
   showDragClip(node,targetLane,edit);
 };
@@ -1639,21 +1704,21 @@ grid.onpointerup=event=>finishDrag(event);
 grid.onpointercancel=event=>finishDrag(event,true);
 grid.onlostpointercapture=event=>finishDrag(event,true);
 grid.ondblclick=event=>{
-  if(event.target.closest('.ruler')) togglePlay();
+  if((event.target as HTMLInputElement).closest('.ruler')) togglePlay();
 };
 grid.onclick=event=>{
-  const action=event.target.closest('[data-toggle],[data-lock],[data-track-mute]');
+  const action=(event.target as HTMLInputElement).closest('[data-toggle],[data-lock],[data-track-mute]');
   if(!action) return;
   update(next=>{
-    const track=next.tracks.find(item=>item.id===(action.dataset.toggle||action.dataset.lock||action.dataset.trackMute));
+    const track=next.tracks.find(item=>item.id===((action as HTMLElement).dataset.toggle||(action as HTMLElement).dataset.lock||(action as HTMLElement).dataset.trackMute));
     if(action.hasAttribute('data-track-mute')) track.muted=!track.muted;
     else if(action.hasAttribute('data-toggle')) track.enabled=!track.enabled;
     else track.locked=!track.locked;
   });
 };
 grid.onkeydown=event=>{
-  const clip=event.target.closest('[data-clip]');
-  if(clip&&event.key==='Enter') {event.preventDefault();select(clip.dataset.clip);}
+  const clip=(event.target as HTMLInputElement).closest('[data-clip]');
+  if(clip&&event.key==='Enter') {event.preventDefault();select((clip as HTMLElement).dataset.clip);}
 };
 let draggedTrack=null;
 let reorderMarker=null;
@@ -1663,9 +1728,9 @@ function clearReorder() {
 }
 
 grid.ondragstart=event=>{
-  const grip=event.target.closest('.track-grip');
+  const grip=(event.target as HTMLInputElement).closest('.track-grip');
   if(!grip) return;
-  draggedTrack=grip.closest('[data-track-head]').dataset.trackHead;
+  draggedTrack=(grip.closest('[data-track-head]') as HTMLElement).dataset.trackHead;
   event.dataTransfer.setData('application/x-oclip-track',draggedTrack);
   event.dataTransfer.effectAllowed='move';
 };
@@ -1675,10 +1740,10 @@ grid.ondragend=()=>{
 };
 
 function reorderTarget(event) {
-  const row=event.target.closest('[data-track-head], .track-lane, [data-new-track]');
+  const row=(event.target as HTMLInputElement).closest('[data-track-head], .track-lane, [data-new-track]');
   if(!row) return null;
-  return {row,id:row.dataset.trackHead??row.dataset.track,
-    after:event.clientY>row.getBoundingClientRect().top+row.offsetHeight/2};
+  return {row,id:(row as HTMLElement).dataset.trackHead??(row as HTMLElement).dataset.track,
+    after:event.clientY>row.getBoundingClientRect().top+(row as HTMLElement).offsetHeight/2};
 }
 
 grid.ondragover=event=>{
@@ -1692,8 +1757,8 @@ grid.ondragover=event=>{
     reorderMarker.classList.add(target.after?'reorder-after':'reorder-before');
     return;
   }
-  const lane=event.target.closest('.track-lane, [data-new-track]');
-  const track=project.tracks.find(item=>item.id===lane?.dataset.track);
+  const lane=(event.target as HTMLInputElement).closest('.track-lane, [data-new-track]');
+  const track=project.tracks.find(item=>item.id===(lane as HTMLElement)?.dataset.track);
   const asset=project.assets.find(item=>item.id===draggedAsset);
   if(!lane||track?.locked||!asset) {clearDrop();return;}
   event.preventDefault();
@@ -1702,7 +1767,7 @@ grid.ondragover=event=>{
   clearDrop();
   lane.classList.add(track&&placement.track?'drop-target':'new-track-target');
 };
-grid.ondragleave=event=>{if(!grid.contains(event.relatedTarget)) {clearDrop();clearReorder();}};
+grid.ondragleave=event=>{if(!grid.contains(event.relatedTarget as Node)) {clearDrop();clearReorder();}};
 grid.ondrop=event=>{
   clearDrop();
   clearReorder();
@@ -1721,18 +1786,18 @@ grid.ondrop=event=>{
     });
     return;
   }
-  const lane=event.target.closest('.track-lane, [data-new-track]');
+  const lane=(event.target as HTMLInputElement).closest('.track-lane, [data-new-track]');
   const asset=project.assets.find(item=>item.id===event.dataTransfer.getData('application/x-oclip-asset'));
   if(!lane||!asset) return;
   event.preventDefault();
-  insert(asset,Math.round(frameAt(event,lane)),lane.dataset.track,lane.hasAttribute('data-new-track'));
+  insert(asset,Math.round(frameAt(event,lane)),(lane as HTMLElement).dataset.track,lane.hasAttribute('data-new-track'));
 };
 
 function setZoom(value, keepPosition=true, clientX=null) {
   const nextZoom=clamp(value,-140,100);
   if(nextZoom===zoom&&keepPosition) return;
   const old=pixels;
-  const head=grid.querySelector('.ruler-head')?.offsetWidth||154;
+  const head=grid.querySelector<HTMLElement>('.ruler-head')?.offsetWidth||154;
   const visible=Math.max(1,scroll.clientWidth-head);
   const anchorOffset=clientX===null
     ? previewFrame*old-scroll.scrollLeft
@@ -1740,7 +1805,7 @@ function setZoom(value, keepPosition=true, clientX=null) {
   const offset=clamp(anchorOffset,0,visible);
   const anchor=(scroll.scrollLeft+offset)/old;
   zoom=nextZoom;
-  $('zoom').value=zoom;
+  $('zoom').value=String(zoom);
   renderTimeline();
   scroll.scrollLeft=keepPosition?Math.max(0,anchor*pixels-offset):0;
 }
@@ -1837,8 +1902,8 @@ $('start-export').onclick=async ()=>{
   exportMessage();
   syncExportControls();
   const progress=$('export-progress');
-  const indicator=progress.querySelector('progress');
-  indicator.value=0;
+  const indicator=progress.querySelector<HTMLElement>('progress');
+  (indicator as HTMLProgressElement).value=0;
   $('export-phase').textContent='Rendering video';
   progress.hidden=false;
   let exportId;
@@ -1847,9 +1912,9 @@ $('start-export').onclick=async ()=>{
     exportJob.signal.throwIfAborted();
     const writeChunk=desktop?bytes=>desktop.exportChunk(exportId,bytes):undefined;
     const bitrate=Number($('export-quality').value);
-    const blob=await record(snapshot,duration(snapshot),format.mimeType,value=>indicator.value=value,exportJob.signal,writeChunk,bitrate);
+    const blob=await record(snapshot,duration(snapshot),format.mimeType,value=>(indicator as HTMLProgressElement).value=value,exportJob.signal,writeChunk,bitrate);
     exportJob.signal.throwIfAborted();
-    indicator.value=1;
+    (indicator as HTMLProgressElement).value=1;
     $('export-phase').textContent='Saving video';
     $('cancel-export').disabled=true;
     if(desktop) {
@@ -1885,15 +1950,15 @@ $('start-export').onclick=async ()=>{
 
 document.addEventListener('pointerdown',event=>{
   const name=$('project-name');
-  if(document.activeElement===name&&event.target!==name) name.blur();
+  if((document.activeElement as HTMLElement)===name&&(event.target as HTMLInputElement)!==name) name.blur();
 },true);
 $('project-name').addEventListener('keydown',event=>{
-  if(event.key==='Enter') {event.preventDefault();event.currentTarget.blur();}
-  if(event.key==='Escape') {event.currentTarget.value=project.name;event.currentTarget.blur();}
+  if(event.key==='Enter') {event.preventDefault();(event.currentTarget as HTMLInputElement).blur();}
+  if(event.key==='Escape') {(event.currentTarget as HTMLInputElement).value=project.name;(event.currentTarget as HTMLInputElement).blur();}
 });
-$('project-name').onchange=event=>update(next=>next.name=event.target.value.trim()||'Untitled project');
+$('project-name').onchange=event=>update(next=>next.name=(event.target as HTMLInputElement).value.trim()||'Untitled project');
 $('asset-search').oninput=renderLibrary;
-for(const button of document.querySelectorAll('[data-tab]')) button.onclick=()=>{
+for(const button of document.querySelectorAll<HTMLElement>('[data-tab]')) button.onclick=()=>{
   tab=button.dataset.tab;
   $('asset-search').value='';
   renderLibrary();
@@ -1914,7 +1979,7 @@ $('monitor-audio').onclick=()=>{
   const media=previewMedia();
   if(media) media.muted=player.muted;
   $('monitor-audio').innerHTML=icon(player.muted?'mute':'volume');
-  $('monitor-audio').setAttribute('aria-pressed',player.muted);
+  $('monitor-audio').setAttribute('aria-pressed',String(player.muted));
   draw();
 };
 function jumpTransport(action) {
@@ -1939,9 +2004,9 @@ $('mute-clip').onclick=()=>toggleClipMute(selected);
 $('snap').onclick=()=>{
   snapping=!snapping;
   $('snap').classList.toggle('active',snapping);
-  $('snap').setAttribute('aria-pressed',snapping);
+  $('snap').setAttribute('aria-pressed',String(snapping));
 };
-$('zoom').oninput=event=>setZoom(Number(event.target.value));
+$('zoom').oninput=event=>setZoom(Number((event.target as HTMLInputElement).value));
 $('zoom-in').onclick=()=>setZoom(zoom+7);
 $('zoom-out').onclick=()=>setZoom(zoom-7);
 $('zoom-fit').onclick=()=>setZoom(fittedZoom(duration(project)),false);
@@ -1990,16 +2055,16 @@ $('shortcuts').onclick=()=>{
 };
 $('close-shortcuts').onclick=()=>$('shortcut-dialog').close();
 $('shortcut-dialog').addEventListener('click',event=>{
-  if(event.target!==event.currentTarget) return;
-  const rect=event.currentTarget.getBoundingClientRect();
-  if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom) event.currentTarget.close();
+  if((event.target as HTMLInputElement)!==(event.currentTarget as HTMLInputElement)) return;
+  const rect=(event.currentTarget as HTMLInputElement).getBoundingClientRect();
+  if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom) (event.currentTarget as HTMLDialogElement).close();
 });
 
 document.addEventListener('keydown',event=>{
   if(onHome) return;
   if($('shortcut-dialog').open) return;
   if($('export-dialog').open||$('confirm-dialog').open) return;
-  const editing=event.target.matches('input,textarea,select')||event.target.isContentEditable;
+  const editing=(event.target as HTMLInputElement).matches('input,textarea,select')||(event.target as HTMLInputElement).isContentEditable;
   const key=event.key.toLowerCase();
   if(togglePanelsFromShortcut(event)) return;
   if(event.altKey) {
@@ -2013,7 +2078,7 @@ document.addEventListener('keydown',event=>{
   if(drag&&key!=='escape') return;
   if(event.ctrlKey||event.metaKey) {
     const timelineShortcut=!editing&&!selectedAsset&&
-      (event.target.closest('.timeline-panel')||event.target===document.body);
+      ((event.target as HTMLInputElement).closest('.timeline-panel')||(event.target as HTMLInputElement)===document.body);
     if(timelineShortcut&&!drag&&key==='a') {
       event.preventDefault();
       const ids=project.tracks.flatMap(track=>track.clips.map(clip=>clip.id));
@@ -2025,7 +2090,7 @@ document.addEventListener('keydown',event=>{
     if(key==='y'&&!editing) {event.preventDefault();undo(true);}
     if(desktop&&key==='s') {
       event.preventDefault();
-      if(editing) event.target.blur();
+      if(editing) (event.target as HTMLInputElement).blur();
       void autosave();
     }
     return;
@@ -2033,13 +2098,13 @@ document.addEventListener('keydown',event=>{
   if(key==='tab'&&!event.shiftKey) {
     event.preventDefault();
     if(!event.repeat) {
-      if(document.activeElement?.matches('button')) document.activeElement.blur();
+      if((document.activeElement as HTMLElement)?.matches('button')) (document.activeElement as HTMLElement).blur();
       previewAsset(null);
       togglePlay();
     }
     return;
   }
-  if(editing||event.target.isContentEditable) return;
+  if(editing||(event.target as HTMLInputElement).isContentEditable) return;
   if(key==='escape') {
     if(drag) finishDrag({pointerId:drag.pointer},true);
     else select(null);
@@ -2050,7 +2115,7 @@ document.addEventListener('keydown',event=>{
   if(key===' ') {
     event.preventDefault();
     if(!event.repeat) {
-      if(document.activeElement?.matches('button')) document.activeElement.blur();
+      if((document.activeElement as HTMLElement)?.matches('button')) (document.activeElement as HTMLElement).blur();
       togglePlay();
     }
     return;
@@ -2097,13 +2162,13 @@ if(desktop) {
     switchHome(state.onHome===true);
     history.push(...state.history);
     future.push(...state.future);
-    $('zoom').value=zoom;
+    $('zoom').value=String(zoom);
   }
   let reloadRetry;
   function reloadEditor() {
     clearTimeout(reloadRetry);
     if(fileBusy||exportJob||drag||previewTransform.gesture||$('confirm-dialog').open||$('export-dialog').open||
-        document.activeElement?.matches('input:not([type="range"]), textarea, select')) {
+        (document.activeElement as HTMLElement)?.matches('input:not([type="range"]), textarea, select')) {
       reloadRetry=setTimeout(reloadEditor,350);
       return;
     }

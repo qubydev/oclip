@@ -1,7 +1,7 @@
 import {icon} from './icons.js';
 
-const main=document.querySelector('main');
-const workspace=document.querySelector('.workspace');
+const main=document.querySelector<HTMLElement>('main');
+const workspace=document.querySelector<HTMLElement>('.workspace');
 const defaults={left:264,right:244,bottom:300,library:false,inspector:false,timeline:false};
 let state={...defaults};
 try {
@@ -14,12 +14,12 @@ for(const key of ['left','right','bottom']) {
   if(!Number.isFinite(state[key])) state[key]=defaults[key];
 }
 const panels={
-  library:document.querySelector('.library'),
-  inspector:document.querySelector('.inspector'),
-  timeline:document.querySelector('.timeline-panel'),
+  library:document.querySelector<HTMLElement>('.library'),
+  inspector:document.querySelector<HTMLElement>('.inspector'),
+  timeline:document.querySelector<HTMLElement>('.timeline-panel'),
 };
 const names={library:'Media panel',viewer:'Player',inspector:'Properties',timeline:'Timeline'};
-const controls={};
+const controls: Record<string, HTMLElement>={};
 const shortcuts={Digit1:'library',Digit2:'inspector',Digit3:'timeline'};
 export const panelShortcuts=[
   ...Object.entries(shortcuts).map(([code,key])=>['Toggle '+names[key],'Alt+Shift+'+code.slice(-1)]),
@@ -71,7 +71,7 @@ function apply() {
     panels[key].classList.toggle('panel-collapsed',state[key]);
     const button=controls[key];
     button.setAttribute('aria-expanded',String(!state[key]));
-    button.setAttribute('aria-label',(state[key]?'Expand ':'Collapse ')+names[key]);
+    button.setAttribute('aria-label',String((state[key]?'Expand ':'Collapse ')+names[key]));
     button.title=button.getAttribute('aria-label');
   }
   for(const [key,handle] of Object.entries(handles)) {
@@ -96,13 +96,13 @@ for(const [key,panel] of Object.entries(panels)) {
   button.innerHTML=icon('panel-toggle');
   button.type='button';
   panel.id ||= 'panel-'+key;
-  button.setAttribute('aria-controls',panel.id);
+  button.setAttribute('aria-controls',String(panel.id));
   controls[key]=button;
   button.onclick=()=>toggle(key);
-  const heading=key==='library'?panel:panel.querySelector(key==='timeline'?'.timeline-heading':'.titlebar');
+  const heading=key==='library'?panel:panel.querySelector<HTMLElement>(key==='timeline'?'.timeline-heading':'.titlebar');
   heading.append(button);
 }
-document.querySelectorAll('[data-tab]').forEach(button=>{
+document.querySelectorAll<HTMLElement>('[data-tab]').forEach(button=>{
   button.addEventListener('click',()=>{if(state.library) toggle('library',false);});
 });
 panels.inspector.addEventListener('reveal-properties',()=>{
@@ -110,13 +110,13 @@ panels.inspector.addEventListener('reveal-properties',()=>{
 });
 
 const panelFor={left:'library',right:'inspector',bottom:'timeline'};
-const handles={};
+const handles: Record<string, HTMLElement>={};
 for(const key of ['left','right','bottom']) {
   const handle=document.createElement('div');
   handle.className='panel-divider '+(key==='bottom'?'horizontal':'vertical');
   handle.setAttribute('role','separator');
-  handle.setAttribute('aria-label','Resize '+names[panelFor[key]]);
-  handle.setAttribute('aria-orientation',key==='bottom'?'horizontal':'vertical');
+  handle.setAttribute('aria-label',String('Resize '+names[panelFor[key]]));
+  handle.setAttribute('aria-orientation',String(key==='bottom'?'horizontal':'vertical'));
   handles[key]=handle;
   if(key==='left') panels.library.after(handle);
   else if(key==='right') panels.inspector.before(handle);

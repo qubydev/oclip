@@ -40,7 +40,7 @@ async function desktopFixture(t) {
   const require=createRequire(main);
   vm.runInNewContext(await readFile(main,'utf8'),{
     require:name=>name==='electron'?electron:require(name),
-    __dirname:path.dirname(main),process,console,Uint8Array,
+    __dirname:path.dirname(main),process,console,Uint8Array,exports:{},
   });
   await new Promise(resolve=>setImmediate(resolve));
   const call=(name,...args)=>handlers.get(name)({senderFrame:{url:'oclip://editor/'},sender:{}},...args);

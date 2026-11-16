@@ -24,9 +24,9 @@ Defer cross-platform rewrites, a public plugin runtime, and a full marketplace u
 
 ## Code map
 
-- `src/model.js` and `src/timeline-edits.js` hold the reusable project and editing rules.
-- `src/editor.js` connects the UI, selection, gestures, history, and autosave.
-- `src/playback.js` determines the layers for each frame and records exports.
-- `desktop/main.cjs` owns project files, native dialogs, media access, and export writes.
+- `src/model.ts` and `src/timeline-edits.ts` hold the reusable project and editing rules.
+- `src/editor.ts` connects the UI, selection, gestures, history, and autosave.
+- `src/playback.ts` determines the layers for each frame and records exports.
+- `desktop/main.cts` owns project files, native dialogs, media access, and export writes.
 
 Run `npm test` before handing off changes. Use `npm run build` when preparing a Windows installer to verify on a clean machine.

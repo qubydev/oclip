@@ -1,8 +1,13 @@
+import type {Asset, Clip, Project} from './types.js';
+interface MediaSource {
+  element: HTMLImageElement | HTMLVideoElement | HTMLAudioElement;
+  url: string; gain?: GainNode; frame?: HTMLCanvasElement; pending?: boolean;
+}
 
 import {FPS,timing} from './model.js';
 import {layoutText} from './text-layout.js';
 
-export function compositionAt(project,frame) {
+export function compositionAt(project: Project,frame: number) {
   const assets=new Map(project.assets.map(asset=>[asset.id,asset]));
   const layers=[];
   for(const track of [...project.tracks].reverse()) {
@@ -20,7 +25,15 @@ export function compositionAt(project,frame) {
 }
 
 export class Player {
-  constructor(canvas, onDraw = () => {}) {
+  canvas: HTMLCanvasElement;
+  context: CanvasRenderingContext2D;
+  sources: Map<string, MediaSource>;
+  onDraw: () => void;
+  muted: boolean;
+  audio?: AudioContext;
+  destination?: MediaStreamAudioDestinationNode;
+
+  constructor(canvas: HTMLCanvasElement, onDraw = () => {}) {
     this.canvas = canvas;
     this.context = canvas.getContext('2d', {alpha:false});
     this.sources = new Map();
@@ -28,19 +41,19 @@ export class Player {
     this.muted = false;
   }
 
-  source(clip,asset) {
+  source(clip: Clip,asset?: Asset): MediaSource {
     if (!asset?.url) return null;
     const key = clip.kind === 'image' ? asset.id : clip.id;
     const existing = this.sources.get(key);
     if (existing?.url === asset.url) return existing;
     if (existing) this.release(existing);
-    const element = clip.kind === 'image' ? new Image() : document.createElement(clip.kind);
-    const entry = {element,url:asset.url};
+    const element = clip.kind === 'image' ? new Image() : document.createElement(clip.kind === 'audio' ? 'audio' : 'video');
+    const entry: MediaSource = {element,url:asset.url};
     this.sources.set(key,entry);
     for (const event of ['load','loadeddata','seeked']) element.addEventListener(event,this.onDraw);
     if (element instanceof HTMLMediaElement) {
       element.preload = 'auto';
-      element.playsInline = true;
+      if (element instanceof HTMLVideoElement) element.playsInline = true;
       if (this.audio) {
         entry.gain = this.audio.createGain();
         this.audio.createMediaElementSource(element).connect(entry.gain).connect(this.destination);
@@ -50,7 +63,7 @@ export class Player {
     return entry;
   }
 
-  release({element,gain}) {
+  release({element,gain}: MediaSource) {
     if (element instanceof HTMLMediaElement) {
       element.pause();
       element.removeAttribute('src');
@@ -65,7 +78,7 @@ export class Player {
     this.audio?.close().catch(()=>{});
   }
 
-  reconcile(project) {
+  reconcile(project: Project) {
     const ids = new Set(project.tracks.flatMap(track=>track.clips.map(clip=>clip.kind==='image'?clip.assetId:clip.id)));
     for (const [key,source] of this.sources) {
       if (ids.has(key)) continue;
@@ -79,7 +92,7 @@ export class Player {
     }
   }
 
-  render(project,frame,playing = false,force = false) {
+  render(project: Project,frame: number,playing = false,force = false) {
     const {canvas,context:ctx} = this;
     const {width,height} = project;
     if (canvas.width!==width) canvas.width=width;
@@ -131,12 +144,12 @@ export class Player {
           const firstLine=(clip.fontSize-boxHeight)/2;
           lines.forEach((line,i)=>ctx.fillText(line,0,firstLine+i*spacing));
         } else {
-          const w = media?.naturalWidth || media?.videoWidth;
-          const h = media?.naturalHeight || media?.videoHeight;
+          const w = media instanceof HTMLImageElement ? media.naturalWidth : media instanceof HTMLVideoElement ? media.videoWidth : 0;
+          const h = media instanceof HTMLImageElement ? media.naturalHeight : media instanceof HTMLVideoElement ? media.videoHeight : 0;
           const drawable=media instanceof HTMLVideoElement && (media.seeking || media.readyState<2) ? entry.frame : media;
           if (w && h && drawable) {
             const scale = Math.min(width/w,height/h);
-            ctx.drawImage(drawable,-w*scale/2,-h*scale/2,w*scale,h*scale);
+            ctx.drawImage(drawable as CanvasImageSource,-w*scale/2,-h*scale/2,w*scale,h*scale);
           }
         }
         ctx.restore();
@@ -147,11 +160,11 @@ export class Player {
   }
 }
 
-function hasExportAudio(project) {
+function hasExportAudio(project: Project) {
   return project.tracks.some(track=>track.enabled&&track.clips.some(clip=>clip.kind==='audio'||clip.kind==='video'));
 }
 
-export function exportFormats(project) {
+export function exportFormats(project: Project) {
   if(typeof MediaRecorder==='undefined') return [];
   const mp4=hasExportAudio(project)?'video/mp4;codecs=avc1,mp4a.40.2':'video/mp4;codecs=avc1';
   return [
@@ -160,11 +173,11 @@ export function exportFormats(project) {
   ].filter(format=>MediaRecorder.isTypeSupported(format.mimeType));
 }
 
-function waitForMedia(element,event,signal,start) {
+function waitForMedia(element: HTMLMediaElement,event: string,signal: AbortSignal,start?: () => void) {
   signal.throwIfAborted();
-  return new Promise((resolve,reject)=>{
+  return new Promise<void>((resolve,reject)=>{
     const controller=new AbortController();
-    const done=error=>{
+    const done=(error?: unknown)=>{
       controller.abort();
       clearTimeout(timeout);
       if(error) reject(error);
@@ -182,13 +195,13 @@ function waitForMedia(element,event,signal,start) {
   });
 }
 
-export async function record(project,frames,mimeType,onProgress,signal,writeChunk,videoBitsPerSecond=10_000_000) {
+export async function record(project: Project,frames: number,mimeType: string,onProgress: (progress: number) => void,signal: AbortSignal,writeChunk?: (bytes: Uint8Array) => Promise<void>,videoBitsPerSecond=10_000_000): Promise<Blob | null> {
   const canvas=document.createElement('canvas');
   const player=new Player(canvas);
   const hasAudio=hasExportAudio(project);
-  let stream;
-  let animation;
-  let recorder;
+  let stream: MediaStream;
+  let animation: number;
+  let recorder: MediaRecorder;
   const preparation=new AbortController();
   const preparing=AbortSignal.any([signal,preparation.signal]);
   let writes=Promise.resolve();
@@ -216,7 +229,7 @@ export async function record(project,frames,mimeType,onProgress,signal,writeChun
     stream=canvas.captureStream(FPS);
     if (hasAudio) for (const track of player.destination.stream.getAudioTracks()) stream.addTrack(track);
     recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond});
-    const chunks=[];
+    const chunks: Blob[]=[];
     recorder.ondataavailable=event=>{
       if(!event.data.size) return;
       if(!writeChunk) {chunks.push(event.data);return;}
@@ -237,7 +250,7 @@ export async function record(project,frames,mimeType,onProgress,signal,writeChun
       };
       const abort=()=>fail(signal.reason);
       signal.addEventListener('abort',abort,{once:true});
-      recorder.onerror=event=>fail(event.error);
+      recorder.onerror=event=>fail((event as Event & {error?: DOMException}).error ?? Error('Video encoding failed.'));
       recorder.onstop=async ()=>{
         await writes;
         signal.removeEventListener('abort',abort);

@@ -2,15 +2,15 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 
-const root = new URL('../', import.meta.url);
+const root = new URL('../../', import.meta.url);
 
 test('the repository includes the Electron entry points and NSIS build inputs', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
   const installer = manifest.build.nsis.include;
   await Promise.all([
     manifest.main,
-    'desktop/preload.cjs',
-    'desktop/preview.mjs',
+    'desktop/preload.cts',
+    'desktop/preview.mts',
     manifest.build.win.icon,
     installer,
   ].map(file => readFile(new URL(file, root))));

@@ -1,15 +1,16 @@
+import type {Asset, Clip, ClipKind, Track, TrackKind, Project, ClipContext, Placement, ClipGroup, ClipMove} from './types.js';
 
 export const FPS = 30;
 export const MAX_FRAMES = 60 * 60 * FPS;
-export const id = () => crypto.randomUUID();
-export const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
-export const timing = clip => clip.start + clip.length;
-export const duration = project => project.tracks.reduce((end,track)=>
+export const id = (): string => crypto.randomUUID();
+export const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+export const timing = (clip: Clip) => clip.start + clip.length;
+export const duration = (project: Project) => project.tracks.reduce((end,track)=>
   track.clips.reduce((maximum,clip)=>Math.max(maximum,timing(clip)),end),0);
-export const dimensions = [[1920,1080,'16:9'],[1080,1920,'9:16'],[1080,1080,'1:1'],[1080,1350,'4:5'],[1080,1440,'3:4']];
-const trackTypes = {text:['Text','text'],video:['Video','film'],audio:['Audio','music']};
+export const dimensions: [number, number, string][] = [[1920,1080,'16:9'],[1080,1920,'9:16'],[1080,1080,'1:1'],[1080,1350,'4:5'],[1080,1440,'3:4']];
+const trackTypes: Record<TrackKind, [string, string]> = {text:['Text','text'],video:['Video','film'],audio:['Audio','music']};
 
-export function createTrack(kind, tracks=[]) {
+export function createTrack(kind: TrackKind, tracks: Track[]=[]): Track {
   const [label,icon]=trackTypes[kind];
   let name=label;
   let number=2;
@@ -18,11 +19,11 @@ export function createTrack(kind, tracks=[]) {
   return {id:id(),kind,name,icon,enabled:true,locked:false,clips:[]};
 }
 
-export function createProject(name = 'Untitled project') {
+export function createProject(name = 'Untitled project'): Project {
   return {version:1,name,width:1920,height:1080,color:'#111216',assets:[],tracks:[]};
 }
 
-export function planPlacement(tracks, clip, position, target=null) {
+export function planPlacement(tracks: Track[], clip: Clip, position: number, target: Track=null): Placement {
   if(target?.locked) return null;
   const edit={...clip,start:clamp(Math.round(position),0,MAX_FRAMES-clip.length)};
   const fits=track=>!track.locked&&accepts(track,clip.kind)&&track.clips.every(item=>
@@ -33,7 +34,7 @@ export function planPlacement(tracks, clip, position, target=null) {
   return {edit,track,newIndex:above?tracks.indexOf(above):tracks.length,kind};
 }
 
-export function placeClip(project, placement) {
+export function placeClip(project: Project, placement: Placement) {
   const {edit,track,newIndex,kind}=placement;
   const source=findClip(project,edit.id)?.track;
   if(source) source.clips=source.clips.filter(clip=>clip.id!==edit.id);
@@ -42,7 +43,7 @@ export function placeClip(project, placement) {
   destination.clips.push(edit);
 }
 
-export function pasteClipGroups(project, groups, frame) {
+export function pasteClipGroups(project: Project, groups: ClipGroup[], frame: number): Clip[] {
   const clips=groups.flatMap(group=>group.clips);
   if(!clips.length) return [];
   const first=clips.reduce((earliest,clip)=>Math.min(earliest,clip.start),MAX_FRAMES);
@@ -72,14 +73,14 @@ export function pasteClipGroups(project, groups, frame) {
   });
 }
 
-export function planGroupMove(project, ids, delta, trackOffset=0, append=false) {
+export function planGroupMove(project: Project, ids: string[], delta: number, trackOffset=0, append=false): ClipMove[] {
   const selected=new Set(ids);
   const contexts=ids.map(id=>findClip(project,id));
   if(contexts.some(item=>!item||item.track.locked)) return null;
   const min=-Math.min(...contexts.map(item=>item.clip.start));
   const max=MAX_FRAMES-Math.max(...contexts.map(item=>timing(item.clip)));
   delta=clamp(Math.round(delta),min,max);
-  const destinations=new Map();
+  const destinations=new Map<string, Track>();
   if(append) {
     for(const track of project.tracks) {
       if(contexts.some(item=>item.track===track)) destinations.set(track.id,createTrack(track.kind,[...project.tracks,...destinations.values()]));
@@ -94,7 +95,7 @@ export function planGroupMove(project, ids, delta, trackOffset=0, append=false) 
   return moves;
 }
 
-export function applyGroupMove(project, moves) {
+export function applyGroupMove(project: Project, moves: ClipMove[]) {
   const ids=new Set(moves.map(move=>move.clip.id));
   for(const track of project.tracks) track.clips=track.clips.filter(clip=>!ids.has(clip.id));
   for(const {clip,track} of moves) {
@@ -109,11 +110,11 @@ export function applyGroupMove(project, moves) {
 
 export const MAX_TEXT_BOX_SIZE=32768;
 
-export function createClip(asset, start = 0) {
+export function createClip(asset: Asset | null, start = 0): Clip {
   return {id:id(),assetId:asset?.id ?? null,kind:asset?.kind ?? 'text',name:asset?.name ?? 'Title',start,length:asset?.frames ?? FPS*4,in:0,x:0,y:0,scale:100,opacity:100,volume:100,text:'Your title',fontSize:84,color:'#ffffff'};
 }
 
-export function findClip(project, clipId) {
+export function findClip(project: Project, clipId: string): ClipContext {
   for (const track of project.tracks) {
     const clip = track.clips.find(item => item.id === clipId);
     if (clip) return {clip,track,asset:project.assets.find(item => item.id === clip.assetId)};
@@ -121,11 +122,11 @@ export function findClip(project, clipId) {
   return null;
 }
 
-export function extractClipAudio(project, clipId) {
+export function extractClipAudio(project: Project, clipId: string): Clip {
   const context = findClip(project, clipId);
   if (!context || context.track.locked || context.clip.kind !== 'video' || !context.asset?.url) return null;
   const {clip,asset} = context;
-  const audio = {...asset,id:id(),kind:'audio',name:asset.name+' (audio)'};
+  const audio: Asset = {...asset,id:id(),kind:'audio',name:asset.name+' (audio)'};
   const audioClip = {...createClip(audio,clip.start),in:clip.in,length:clip.length,volume:clip.volume,audioFor:clip.id};
   const placement = planPlacement(project.tracks.filter(track=>track.enabled),audioClip,clip.start);
   if (!placement.track) placement.newIndex=project.tracks.length;
@@ -135,11 +136,11 @@ export function extractClipAudio(project, clipId) {
   return audioClip;
 }
 
-export function accepts(track, kind) {
+export function accepts(track: Track, kind: ClipKind) {
   return track.kind === kind || (track.kind === 'video' && kind === 'image');
 }
 
-export function bounds(track, clip, mode, position = clip.start) {
+export function bounds(track: Track, clip: Clip, mode: string, position = clip.start): number | [number, number] {
   const rest = track.clips.filter(item => item.id !== clip.id).sort((a,b)=>a.start-b.start);
   if (mode === 'move') {
     const gaps = [];
@@ -158,14 +159,14 @@ export function bounds(track, clip, mode, position = clip.start) {
   return [previous,next];
 }
 
-export function editSpan(track, clip, mode, position, asset) {
+export function editSpan(track: Track, clip: Clip, mode: string, position: number, asset?: Asset): Clip {
   const frame = Math.round(Number(position));
   if (!Number.isFinite(frame)) return clip;
   if (mode === 'move') {
-    const start = bounds(track,clip,mode,frame);
+    const start = bounds(track,clip,mode,frame) as number | null;
     return start === null ? null : {...clip,start};
   }
-  const [previous,next] = bounds(track,clip,mode);
+  const [previous,next] = bounds(track,clip,mode) as [number, number];
   const sourceLength = /^(video|audio)$/.test(clip.kind) ? asset?.frames ?? timing(clip)-clip.start+clip.in : Infinity;
   if (mode === 'left') {
     const start = clamp(frame,Math.max(previous,Number.isFinite(sourceLength) ? clip.start-clip.in : 0),timing(clip)-1);
@@ -176,37 +177,37 @@ export function editSpan(track, clip, mode, position, asset) {
   return {...clip,length:end-clip.start};
 }
 
-export function splitClip(clip, frame) {
+export function splitClip(clip: Clip, frame: number): [Clip, Clip] | null {
   if (frame<=clip.start || frame>=timing(clip)) return null;
   const length = frame-clip.start;
   const input = /^(audio|video)$/.test(clip.kind) ? clip.in+length : 0;
   return [{...clip,length},{...clip,id:id(),start:frame,length:clip.length-length,in:input}];
 }
 
-export function timelineMetrics(available, frames, zoom) {
+export function timelineMetrics(available: number, frames: number, zoom: number) {
   const baseline = FPS * 27;
   const pixels = available / baseline * 2 ** ((zoom - 44) / 21);
   const span = Math.max(baseline, frames + FPS);
   return {pixels, width:Math.max(available,Math.ceil(span * pixels))};
 }
 
-export function fittedZoom(frames) {
+export function fittedZoom(frames: number) {
   const baseline = FPS * 27;
   return Math.floor(44 + 21 * Math.log2(baseline / Math.max(baseline, frames + FPS)));
 }
 
-export function timecode(frame, short = false) {
+export function timecode(frame: number, short = false) {
   const parts = [Math.floor(frame/(3600*FPS)),Math.floor(frame/(60*FPS))%60,Math.floor(frame/FPS)%60,frame%FPS];
   return (short ? parts.slice(parts[0] ? 0 : 1,3) : parts).map(n=>String(n).padStart(2,'0')).join(':');
 }
 
-export function validateProject(project) {
+export function validateProject(project: Project): boolean {
   const integer = (n,min,max) => Number.isInteger(n) && n>=min && n<=max;
   const color = value => /^#[a-f\d]{6}$/i.test(value);
   if (!project || project.version !== 1 || typeof project.name !== 'string' ||
       !integer(project.width,64,3840) || !integer(project.height,64,3840) || !color(project.color) ||
       !Array.isArray(project.assets) || !Array.isArray(project.tracks)) return false;
-  const assets = new Map();
+  const assets = new Map<string, Asset>();
   for (const asset of project.assets) {
     if (!asset || typeof asset.id!=='string' || assets.has(asset.id) || typeof asset.name!=='string' || typeof asset.url!=='string' ||
         !['image','audio','video'].includes(asset.kind) || !integer(asset.frames,1,MAX_FRAMES) ||

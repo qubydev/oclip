@@ -4,29 +4,29 @@ export function installSelects() {
   const controls = new Map();
   let active;
 
-  function enhance(select) {
+  function enhance(select: HTMLSelectElement) {
     const wrapper = document.createElement('span');
     wrapper.className = 'select-control';
     const trigger = document.createElement('button');
     trigger.type = 'button';
     trigger.className = 'select-trigger';
-    trigger.setAttribute('aria-haspopup', 'listbox');
-    trigger.setAttribute('aria-expanded', 'false');
+    trigger.setAttribute('aria-haspopup',String( 'listbox'));
+    trigger.setAttribute('aria-expanded',String( 'false'));
     trigger.innerHTML = '<span></span>' + icon('chevron');
     const menu = document.createElement('div');
     menu.className = 'select-menu';
     menu.popover = 'auto';
     menu.setAttribute('role', 'listbox');
     menu.id = 'select-menu-' + controls.size + '-' + Math.random().toString(36).slice(2);
-    trigger.setAttribute('aria-controls', menu.id);
+    trigger.setAttribute('aria-controls',String( menu.id));
     select.before(wrapper);
     wrapper.append(select, trigger, menu);
     select.classList.add('select-source');
     select.tabIndex = -1;
-    select.setAttribute('aria-hidden', 'true');
-    const label = select.getAttribute('aria-label') || select.closest('label')?.querySelector('span')?.textContent || select.id;
-    trigger.setAttribute('aria-label', label);
-    menu.setAttribute('aria-label', label);
+    select.setAttribute('aria-hidden',String( 'true'));
+    const label = select.getAttribute('aria-label') || select.closest('label')?.querySelector<HTMLElement>('span')?.textContent || select.id;
+    trigger.setAttribute('aria-label',String( label));
+    menu.setAttribute('aria-label',String( label));
 
     function sync() {
       const text = select.selectedOptions[0]?.textContent || 'Select';
@@ -42,7 +42,7 @@ export function installSelects() {
         const item = document.createElement('button');
         item.type = 'button';
         item.setAttribute('role', 'option');
-        item.setAttribute('aria-selected', String(option.selected));
+        item.setAttribute('aria-selected',String(option.selected));
         item.disabled = option.disabled;
         item.textContent = option.textContent;
         item.insertAdjacentHTML('beforeend', icon('check'));
@@ -62,20 +62,20 @@ export function installSelects() {
       menu.style.width = Math.max(160, rect.width) + 'px';
       menu.style.left = Math.max(8, Math.min(rect.left, innerWidth - menu.offsetWidth - 8)) + 'px';
       menu.style.top = Math.max(8, rect.bottom + menu.offsetHeight + 6 < innerHeight ? rect.bottom + 6 : rect.top - menu.offsetHeight - 6) + 'px';
-      (menu.querySelector('[aria-selected="true"]:enabled') || menu.querySelector('button:enabled'))?.focus();
+      (menu.querySelector<HTMLElement>('[aria-selected="true"]:enabled') || menu.querySelector<HTMLElement>('button:enabled'))?.focus();
     }
     trigger.onclick = () => menu.matches(':popover-open') ? menu.hidePopover() : open();
     trigger.onkeydown = event => {
       event.stopPropagation();
       if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); open(); }
     };
-    menu.addEventListener('toggle', () => trigger.setAttribute('aria-expanded', String(menu.matches(':popover-open'))));
+    menu.addEventListener('toggle', () => trigger.setAttribute('aria-expanded',String(menu.matches(':popover-open'))));
     let search = '';
     let searchedAt = 0;
     menu.onkeydown = event => {
       event.stopPropagation();
-      const items = [...menu.querySelectorAll('button:enabled')];
-      const index = items.indexOf(document.activeElement);
+      const items = [...menu.querySelectorAll<HTMLElement>('button:enabled')];
+      const index = items.indexOf((document.activeElement as HTMLElement));
       let next;
       if (event.key === 'ArrowDown') next = items[(index + 1) % items.length];
       if (event.key === 'ArrowUp') next = items[(index - 1 + items.length) % items.length];
@@ -99,14 +99,14 @@ export function installSelects() {
       if (!select.isConnected) controls.delete(select);
       else control.sync();
     }
-    document.querySelectorAll('select:not(.select-source)').forEach(enhance);
+    document.querySelectorAll<HTMLElement>('select:not(.select-source)').forEach(enhance);
   }
   new MutationObserver(records => {
     // Only source controls matter. Generated buttons must not trigger a resync.
-    if (records.some(record => record.type === 'childList' || record.target.matches('select, option, optgroup'))) refresh();
+    if (records.some(record => record.type === 'childList' || (record.target as HTMLElement).matches('select, option, optgroup'))) refresh();
   }).observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['disabled','selected']});
   const dismiss = event => {
-    if (active?.matches(':popover-open') && !active.contains(event.target)) active.hidePopover();
+    if (active?.matches(':popover-open') && !active.contains((event.target as HTMLInputElement))) active.hidePopover();
   };
   window.addEventListener('resize', dismiss);
   document.addEventListener('scroll', dismiss, true);

@@ -3,24 +3,28 @@
   "version": "0.1.0",
   "description": "An open-source desktop video editor",
   "type": "module",
-  "main": "desktop/main.cjs",
+  "main": ".build/desktop/main.cjs",
   "private": true,
   "license": "MIT",
   "scripts": {
-    "start": "electron .",
-    "test": "node --test",
-    "build": "npx --yes electron-builder@26 --win nsis --x64",
-    "preview": "node desktop/preview.mjs",
-    "dev": "electron . --oclip-dev"
+    "start": "npm run compile && electron .",
+    "test": "npm run compile && node --test .build/test/*.test.js",
+    "build": "npm run compile && npx --yes electron-builder@26 --win nsis --x64",
+    "preview": "npm run compile && node .build/desktop/preview.mjs",
+    "dev": "npm run compile && node scripts/dev.ts",
+    "compile": "tsc && node scripts/copy-static.ts",
+    "typecheck": "tsc --noEmit",
+    "test:smoke": "npm run compile && electron .build/test/electron-smoke.cjs"
   },
   "build": {
     "appId": "oclip.editor",
     "productName": "Oclip",
     "files": [
-      "index.html",
-      "src/**/*",
-      "desktop/**/*.cjs",
-      "assets/**/*"
+      ".build/src/**/*.js",
+      ".build/desktop/**/*.cjs",
+      ".build/index.html",
+      ".build/src/**/*.css",
+      ".build/assets/**/*"
     ],
     "nsis": {
       "include": "desktop/installer.nsh"
@@ -31,6 +35,8 @@
     }
   },
   "devDependencies": {
-    "electron": "45.3.2"
+    "@types/node": "^24.19.2",
+    "electron": "45.3.2",
+    "typescript": "^6.0.3"
   }
 }

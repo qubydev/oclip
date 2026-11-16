@@ -3,7 +3,18 @@ const minimapIdleMs=3000;
 const minimumFitRatio=.5;
 
 export class PreviewView {
-  constructor(viewport,canvas) {
+  viewport: HTMLElement;
+  canvas: HTMLCanvasElement;
+  width: number; height: number; scale: number; auto: boolean;
+  x: number; y: number;
+  map: HTMLDivElement; thumbnail: HTMLCanvasElement; box: HTMLDivElement;
+  pendingZoom?: {media: HTMLElement | null; delta: number; x: number; y: number};
+  zoomFrame = 0;
+  assetScale = 1;
+  minimapTimer?: ReturnType<typeof setTimeout>;
+  onLayout?: () => void;
+
+  constructor(viewport: HTMLElement,canvas: HTMLCanvasElement) {
     this.viewport=viewport;
     this.canvas=canvas;
     this.width=1920;
@@ -23,14 +34,14 @@ export class PreviewView {
     viewport.append(this.map);
     this.map.addEventListener('pointerleave',()=>this.scheduleMinimapHide());
     viewport.tabIndex=0;
-    viewport.setAttribute('aria-label','Preview. Drag to pan. Control or Command plus wheel to zoom. Arrow keys to pan.');
+    viewport.setAttribute('aria-label',String('Preview. Drag to pan. Control or Command plus wheel to zoom. Arrow keys to pan.'));
     document.getElementById('preview-fit').onclick=()=>{
       if(viewport.classList.contains('showing-asset')) this.fitAsset();
       else this.fit();
     };
     viewport.addEventListener('wheel',event=>{
       if(viewport.classList.contains('showing-asset')) {
-        const media=viewport.querySelector('.asset-preview :is(img,video)');
+        const media=viewport.querySelector<HTMLElement>('.asset-preview :is(img,video)');
         if(!media) return;
         event.preventDefault();
         const unit=event.deltaMode===1?16:event.deltaMode===2?viewport.clientHeight:1;
@@ -39,7 +50,7 @@ export class PreviewView {
         }
         return;
       }
-      if(this.map.contains(event.target)) return;
+      if(this.map.contains((event.target as HTMLInputElement))) return;
       event.preventDefault();
       const unit=event.deltaMode===1?16:event.deltaMode===2?viewport.clientHeight:1;
       if(event.ctrlKey||event.metaKey) {
@@ -57,7 +68,7 @@ export class PreviewView {
       if(event.button!==0&&event.button!==1) return;
       event.preventDefault();
       viewport.focus({preventScroll:true});
-      drag={id:event.pointerId,x:event.clientX,y:event.clientY,map:this.map.contains(event.target)};
+      drag={id:event.pointerId,x:event.clientX,y:event.clientY,map:this.map.contains((event.target as HTMLInputElement))};
       viewport.setPointerCapture(event.pointerId);
       viewport.classList.add('panning');
       if(drag.map) this.navigate(event);
@@ -95,7 +106,7 @@ export class PreviewView {
     };
   }
 
-  queueZoom(event,unit,media=null) {
+  queueZoom(event: WheelEvent,unit: number,media: HTMLElement=null) {
     if(this.pendingZoom && this.pendingZoom.media!==media) this.cancelZoom();
     const delta=clamp(-event.deltaY*unit*.0013,-.14,.14);
     this.pendingZoom={
@@ -113,7 +124,7 @@ export class PreviewView {
       if(media) {
         if(!media.isConnected) return;
         this.assetScale=clamp(this.assetScale*factor,minimumFitRatio,8);
-        media.style.scale=this.assetScale;
+        media.style.scale=String(this.assetScale);
       } else if(!this.viewport.classList.contains('showing-asset')) {
         const rect=this.viewport.getBoundingClientRect();
         this.zoom(this.scale*factor,x-rect.left,y-rect.top);
@@ -135,7 +146,7 @@ export class PreviewView {
   fitAsset() {
     this.cancelZoom();
     this.assetScale=1;
-    const media=this.viewport.querySelector('.asset-preview :is(img,video)');
+    const media=this.viewport.querySelector<HTMLElement>('.asset-preview :is(img,video)');
     if(media) media.style.scale='';
   }
 

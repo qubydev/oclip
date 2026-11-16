@@ -13,7 +13,7 @@ export function renderProjects(container,projects,actions,{query='',sort='recent
     const empty=document.createElement('div');
     empty.className='home-empty';
     empty.innerHTML=icon(projects.length?'search':'film')+'<p></p>';
-    empty.querySelector('p').textContent=projects.length?'No matching projects':'No projects yet';
+    empty.querySelector<HTMLElement>('p').textContent=projects.length?'No matching projects':'No projects yet';
     container.append(empty);
     return;
   }
@@ -25,16 +25,16 @@ export function renderProjects(container,projects,actions,{query='',sort='recent
       '<div class="home-project-menu" popover><button type="button" data-duplicate autofocus>'+icon('copy')+'Duplicate</button>'+
       '<button type="button" data-collect>'+icon('folder')+'Collect project files</button>'+
       '<button type="button" class="home-delete" data-delete>'+icon('trash')+'Delete</button></div>';
-    const open=card.querySelector('.home-open');
+    const open=card.querySelector<HTMLElement>('.home-open');
     open.onclick=()=>actions.open(project.id);
-    const title=card.querySelector('strong');
+    const title=card.querySelector<HTMLElement>('strong');
     title.textContent=project.name;
     title.title=project.name;
     const date=new Date(project.modified);
-    const time=card.querySelector('time');
+    const time=card.querySelector<HTMLTimeElement>('time');
     time.dateTime=date.toISOString();
     time.textContent=projectDate.format(date);
-    const thumbnail=card.querySelector('.home-thumbnail');
+    const thumbnail=card.querySelector<HTMLElement>('.home-thumbnail');
     thumbnail.innerHTML=icon('film');
     if(project.thumbnail) {
       const image=new Image();
@@ -43,9 +43,9 @@ export function renderProjects(container,projects,actions,{query='',sort='recent
       image.onload=()=>thumbnail.replaceChildren(image);
       image.src=project.thumbnail;
     }
-    const more=card.querySelector('.home-more');
-    const menu=card.querySelector('.home-project-menu');
-    more.setAttribute('aria-label','Options for '+project.name);
+    const more=card.querySelector<HTMLElement>('.home-more');
+    const menu=card.querySelector<HTMLElement>('.home-project-menu');
+    more.setAttribute('aria-label',String('Options for '+project.name));
     more.onclick=()=>{
       if(menu.matches(':popover-open')) {menu.hidePopover();return;}
       const anchor=more.getBoundingClientRect();
@@ -56,15 +56,15 @@ export function renderProjects(container,projects,actions,{query='',sort='recent
       menu.style.top=(below+height<=innerHeight-8?below:Math.max(8,anchor.top-height-5))+'px';
     };
     menu.addEventListener('toggle',event=>more.setAttribute('aria-expanded',String(event.newState==='open')));
-    menu.querySelector('[data-duplicate]').onclick=()=>{
+    menu.querySelector<HTMLElement>('[data-duplicate]').onclick=()=>{
       menu.hidePopover();
       actions.duplicate(project.id);
     };
-    menu.querySelector('[data-collect]').onclick=()=>{
+    menu.querySelector<HTMLElement>('[data-collect]').onclick=()=>{
       menu.hidePopover();
       actions.collect(project.id);
     };
-    menu.querySelector('[data-delete]').onclick=()=>{
+    menu.querySelector<HTMLElement>('[data-delete]').onclick=()=>{
       menu.hidePopover();
       actions.remove(project);
     };

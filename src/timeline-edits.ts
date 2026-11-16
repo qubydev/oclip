@@ -1,6 +1,7 @@
+import type {Project} from './types.js';
 import {findClip, splitClip, timing, planGroupMove, applyGroupMove} from './model.js';
 
-export function splitSelection(project, ids, frame) {
+export function splitSelection(project: Project, ids: string[], frame: number) {
   const rightIds=new Map();
   const selection=ids.map(id=>{
     const context=findClip(project,id);
@@ -21,7 +22,7 @@ export function splitSelection(project, ids, frame) {
   return selection;
 }
 
-export function removeSelection(project, ids, ripple=false) {
+export function removeSelection(project: Project, ids: string[], ripple=false) {
   const selected=new Set(ids);
   for(const track of project.tracks) {
     if(track.locked) continue;
@@ -40,7 +41,7 @@ export function removeSelection(project, ids, ripple=false) {
   }
 }
 
-export function closeGap(project,id) {
+export function closeGap(project: Project,id: string) {
   const context=findClip(project,id);
   if(!context||context.track.locked) return false;
   const {clip,track}=context;
@@ -54,7 +55,7 @@ export function closeGap(project,id) {
   return true;
 }
 
-export function linkedSelection(project,ids) {
+export function linkedSelection(project: Project, ids: string[]) {
   const selected=new Set(ids);
   for(const track of project.tracks) {
     for(const clip of track.clips) {
@@ -68,7 +69,7 @@ export function linkedSelection(project,ids) {
   return [...selected];
 }
 
-export function planTimelineDrag(project, ids, delta, offset, append, targets, radius) {
+export function planTimelineDrag(project: Project, ids: string[], delta: number, offset: number, append: boolean, targets: number[], radius: number) {
   const candidates=[];
   if(radius>0) {
     for(const id of ids) {

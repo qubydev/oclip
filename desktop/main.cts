@@ -1,27 +1,27 @@
-const {app, BrowserWindow, Menu, dialog, ipcMain, protocol, screen, shell} = require('electron');
-const {readFile, writeFile, appendFile, stat, rename, rm, mkdir, readdir, mkdtemp, copyFile, rmdir} = require('node:fs/promises');
-const {isDeepStrictEqual} = require('node:util');
-const {constants, createReadStream, readFileSync, renameSync, watch, writeFileSync} = require('node:fs');
-const {Readable} = require('node:stream');
-const {randomUUID} = require('node:crypto');
-const path = require('node:path');
+const {app, BrowserWindow, Menu, dialog, ipcMain, protocol, screen, shell} = require('electron') as typeof import('electron');
+const {readFile, writeFile, appendFile, stat, rename, rm, mkdir, readdir, mkdtemp, copyFile, rmdir} = require('node:fs/promises') as typeof import('node:fs/promises');
+const {isDeepStrictEqual} = require('node:util') as typeof import('node:util');
+const {constants, createReadStream, readFileSync, renameSync, watch, writeFileSync} = require('node:fs') as typeof import('node:fs');
+const {Readable} = require('node:stream') as typeof import('node:stream');
+const {randomUUID} = require('node:crypto') as typeof import('node:crypto');
+const path = require('node:path') as typeof import('node:path');
 
 const root = path.join(__dirname, '..');
 const development = !app.isPackaged && process.argv.includes('--oclip-dev');
-const media = new Map();
-const mediaByPath=new Map();
-const types = {png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', webp:'image/webp', gif:'image/gif', bmp:'image/bmp', mp4:'video/mp4', webm:'video/webm', mov:'video/quicktime', m4v:'video/mp4', wav:'audio/wav', mp3:'audio/mpeg', ogg:'audio/ogg', m4a:'audio/mp4', aac:'audio/aac', flac:'audio/flac'};
+const media = new Map<string, {file: string; type: string}>();
+const mediaByPath=new Map<string, string>();
+const types: Record<string, string> = {png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', webp:'image/webp', gif:'image/gif', bmp:'image/bmp', mp4:'video/mp4', webm:'video/webm', mov:'video/quicktime', m4v:'video/mp4', wav:'audio/wav', mp3:'audio/mpeg', ogg:'audio/ogg', m4a:'audio/mp4', aac:'audio/aac', flac:'audio/flac'};
 const mediaExtensions = Object.keys(types);
 const audioExtensions = mediaExtensions.filter(extension => types[extension].startsWith('audio/'));
 const bundledAssets = new Set(['assets/nightfall.png','assets/violet.png','assets/blue.png','assets/ambience.wav']);
-const bundledTypes = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
+const bundledTypes: Record<string, string> = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
 const pngIcon = path.join(root,'assets','oclip.png');
 const windowIcon = process.platform === 'win32' ? path.join(root,'assets','oclip.ico') : pngIcon;
 const projects = [{name:'Oclip project', extensions:['oclip']}];
 const origin = 'oclip://editor';
 protocol.registerSchemesAsPrivileged([{scheme:'oclip', privileges:{standard:true,secure:true,supportFetchAPI:true,stream:true}}]);
 
-async function register(file) {
+async function register(file: string) {
   const type = types[path.extname(file).slice(1).toLowerCase()];
   if (!type || !path.isAbsolute(file) || !(await stat(file)).isFile()) throw Error('Unsupported media file.');
   const normalized=path.normalize(file);
@@ -38,7 +38,7 @@ async function stream(request, entry) {
   if (!entry) return new Response(null,{status:404});
   const {size} = await stat(entry.file);
   if (!size) return new Response(null,{status:404});
-  const headers = {'Content-Type':entry.type,'Accept-Ranges':'bytes'};
+  const headers: Record<string, string> = {'Content-Type':entry.type,'Accept-Ranges':'bytes'};
   const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') || '');
   let start = 0;
   let end = size - 1;
@@ -71,7 +71,7 @@ function projectForDisk(project) {
   }))};
 }
 
-async function loadProject(project, file) {
+async function loadProject(project, file?) {
   if(!project||project.version!==1||!Array.isArray(project.assets)) throw Error('Unsupported project.');
   for(const asset of project.assets) {
     if(!asset||typeof asset!=='object') throw Error('Invalid media record.');
@@ -379,7 +379,7 @@ app.whenReady().then(() => {
     const minHeight=Math.min(680,workArea.height);
     const width=Math.max(minWidth,Math.min(workArea.width,valid?bounds.width:1480));
     const height=Math.max(minHeight,Math.min(workArea.height,valid?bounds.height:960));
-    const options={width,height,minWidth,minHeight};
+    const options: import('electron').BrowserWindowConstructorOptions={width,height,minWidth,minHeight};
     if(valid) {
       options.x=Math.max(workArea.x,Math.min(bounds.x,workArea.x+workArea.width-width));
       options.y=Math.max(workArea.y,Math.min(bounds.y,workArea.y+workArea.height-height));
@@ -419,11 +419,12 @@ app.whenReady().then(() => {
     window.webContents.on('render-process-gone', () => pendingCloses.delete(window));
     if (development) {
       let reloadTimer;
-      const watchers = [
+      const watchTargets: [string, (name: string) => boolean][] = [
         [root, name => name === 'index.html'],
         [path.join(root,'src'), name => /\.(js|css)$/.test(name)],
         [__dirname, name => name === 'preload.cjs' || name === 'main.cjs'],
-      ].map(([directory, matches]) => {
+      ];
+      const watchers = watchTargets.map(([directory, matches]) => {
         const watcher = watch(directory, (_event, filename) => {
           if (filename && !matches(filename)) return;
           if (filename === 'main.cjs') {

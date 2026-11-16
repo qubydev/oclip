@@ -1,6 +1,7 @@
+import type {Clip} from './types.js';
 const graphemes=new Intl.Segmenter(undefined,{granularity:'grapheme'});
 
-export function layoutText(ctx,clip) {
+export function layoutText(ctx: CanvasRenderingContext2D,clip: Clip) {
   ctx.font='650 '+clip.fontSize+'px "Segoe UI", sans-serif';
   const maxWidth=clip.textWidth;
   const lines=[];
