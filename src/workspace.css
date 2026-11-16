@@ -280,12 +280,17 @@ input:focus, textarea:focus, select:focus {
 
 /* Keep scrollbar appearance from feeding back into ruler measurement. */
 .timeline-scroll {
-  overflow-x: auto;
+  overflow-x: scroll;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overflow-anchor: none;
+  contain: size;
   min-width: 0;
+  min-height: 0;
 }
 .timeline-grid {
-  min-width: 100%;
-  grid-template-columns: var(--track-head) minmax(var(--time-width), 1fr);
+  width: calc(var(--track-head) + var(--time-width));
+  grid-template-columns: var(--track-head) var(--time-width);
   align-content: start;
 }
 .tick {

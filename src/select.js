@@ -31,7 +31,7 @@ export function installSelects() {
     function sync() {
       const text = select.selectedOptions[0]?.textContent || 'Select';
       if (trigger.firstElementChild.textContent !== text) trigger.firstElementChild.textContent = text;
-      trigger.disabled = select.disabled;
+      if (trigger.disabled !== select.disabled) trigger.disabled = select.disabled;
       if (select.disabled && menu.matches(':popover-open')) menu.hidePopover();
     }
     function open() {
@@ -101,7 +101,10 @@ export function installSelects() {
     }
     document.querySelectorAll('select:not(.select-source)').forEach(enhance);
   }
-  new MutationObserver(refresh).observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['disabled','selected']});
+  new MutationObserver(records => {
+    // Only source controls matter. Generated buttons must not trigger a resync.
+    if (records.some(record => record.type === 'childList' || record.target.matches('select, option, optgroup'))) refresh();
+  }).observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['disabled','selected']});
   const dismiss = event => {
     if (active?.matches(':popover-open') && !active.contains(event.target)) active.hidePopover();
   };

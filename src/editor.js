@@ -622,7 +622,8 @@ function startNumberScrub(event,properties,clipId) {
 function timelineScale() {
   const viewport=$('timeline-scroll');
   const head=Number.parseFloat(getComputedStyle(viewport).getPropertyValue('--track-head'));
-  const available=Math.max(1,viewport.clientWidth-head);
+  // The outer width is independent of scrollbars and timeline content.
+  const available=Math.max(1,viewport.getBoundingClientRect().width-head);
   return timelineMetrics(available,duration(project),zoom);
 }
 
@@ -1754,8 +1755,7 @@ scroll.addEventListener('wheel',event=>{
 },{passive:false});
 
 let availableFormats=[];
-let exportDestination=null;
-const canChooseExport=Boolean(desktop||window.showSaveFilePicker);
+let exportFolder=null;
 const exportFormat=()=>availableFormats.find(format=>format.extension===$('export-format').value);
 
 function exportMessage(message='') {
@@ -1765,58 +1765,59 @@ function exportMessage(message='') {
 
 function syncExportControls() {
   const busy=Boolean(exportJob||exportPicking);
-  const location=exportDestination?.file??exportDestination?.name;
-  $('export-location').textContent=location??(canChooseExport?'Choose a file location':'Browser downloads');
+  const location=exportFolder;
+  $('export-location').textContent=location??(desktop?'Loading folder…':'Browser downloads');
   $('export-location').title=location??'';
   $('export-format').disabled=busy||!availableFormats.length;
   $('export-quality').disabled=busy;
-  $('choose-export').hidden=!canChooseExport;
-  $('choose-export').disabled=busy||!exportFormat();
-  $('start-export').disabled=busy||!exportFormat()||(canChooseExport&&!exportDestination);
-  $('close-export').disabled=busy;
-  $('cancel-export').disabled=exportPicking;
+  $('choose-export').hidden=!desktop;
+  $('choose-export').disabled=busy;
+  $('start-export').disabled=busy||!exportFormat()||(desktop&&!exportFolder);
+  $('close-export').disabled=Boolean(exportJob);
+  $('cancel-export').disabled=false;
 }
 
-$('export').onclick=()=>{
+$('export').onclick=async ()=>{
+  if(exportPicking) return;
   const frames=duration(project);
   if(!frames) return;
   availableFormats=exportFormats(project);
   $('export-format').replaceChildren(...availableFormats.map(format=>new Option(format.label,format.extension)));
-  exportDestination=null;
   $('export-details').textContent=project.width+' × '+project.height+' · '+FPS+' fps · '+timecode(frames);
   exportMessage(availableFormats.length?'':'No compatible video encoder is available on this device.');
   $('export-progress').hidden=true;
   syncExportControls();
   $('export-dialog').showModal();
+  if(desktop&&!exportFolder) {
+    try {
+      const folder=await desktop.exportFolder();
+      exportFolder??=folder;
+    }
+    catch(error) {if(!exportFolder) exportMessage(error.message);}
+    syncExportControls();
+  }
 };
 $('export-format').onchange=()=>{
-  exportDestination=null;
   exportMessage();
   syncExportControls();
 };
 $('choose-export').onclick=async ()=>{
-  const format=exportFormat();
-  if(!format||exportPicking||exportJob) return;
+  if(!desktop||exportPicking||exportJob) return;
   exportPicking=true;
   exportMessage();
   syncExportControls();
   try {
-    const {extension,contentType,label}=format;
-    const destination=desktop?await desktop.chooseExport(project.name,extension):await window.showSaveFilePicker({
-      suggestedName:project.name+'.'+extension,
-      types:[{description:label,accept:{[contentType]:['.'+extension]}}],
-      excludeAcceptAllOption:true,
-    });
-    if(destination) exportDestination=destination;
+    const folder=await desktop.chooseExportFolder();
+    if(folder) exportFolder=folder;
   } catch(error) {
-    if(error.name!=='AbortError') exportMessage(error.message);
+    exportMessage(error.message);
   } finally {
     exportPicking=false;
     syncExportControls();
   }
 };
 $('export-dialog').addEventListener('cancel',event=>{
-  if(!exportJob&&!exportPicking) return;
+  if(!exportJob) return;
   event.preventDefault();
   if(!$('cancel-export').disabled) exportJob?.abort();
 });
@@ -1827,7 +1828,7 @@ $('cancel-export').onclick=event=>{
 };
 $('start-export').onclick=async ()=>{
   const format=exportFormat();
-  if(!format||exportJob||exportPicking||(canChooseExport&&!exportDestination)) return;
+  if(!format||exportJob||exportPicking||(desktop&&!exportFolder)) return;
   const snapshot=project;
   const missing=snapshot.tracks.some(track=>track.enabled&&track.clips.some(clip=>clip.assetId&&!snapshot.assets.find(asset=>asset.id===clip.assetId)?.url));
   if(missing) {exportMessage('An enabled track contains missing media.');return;}
@@ -1840,20 +1841,21 @@ $('start-export').onclick=async ()=>{
   indicator.value=0;
   $('export-phase').textContent='Rendering video';
   progress.hidden=false;
-  let saving=false;
+  let exportId;
   try {
-    const writeChunk=desktop?bytes=>desktop.exportChunk(exportDestination.id,bytes):undefined;
+    if(desktop) exportId=await desktop.beginExport(snapshot.name,format.extension);
+    exportJob.signal.throwIfAborted();
+    const writeChunk=desktop?bytes=>desktop.exportChunk(exportId,bytes):undefined;
     const bitrate=Number($('export-quality').value);
     const blob=await record(snapshot,duration(snapshot),format.mimeType,value=>indicator.value=value,exportJob.signal,writeChunk,bitrate);
     exportJob.signal.throwIfAborted();
     indicator.value=1;
     $('export-phase').textContent='Saving video';
     $('cancel-export').disabled=true;
-    saving=true;
     if(desktop) {
-      await desktop.finishExport(exportDestination.id,true);
-    } else if(exportDestination) {
-      await blob.stream().pipeTo(await exportDestination.createWritable());
+      const id=exportId;
+      exportId=undefined;
+      await desktop.finishExport(id,true);
     } else {
       const url=URL.createObjectURL(blob);
       const link=document.createElement('a');
@@ -1865,10 +1867,12 @@ $('start-export').onclick=async ()=>{
     $('export-dialog').close();
     notify('Video exported');
   } catch(error) {
-    if(desktop&&exportDestination) await desktop.finishExport(exportDestination.id,false).catch(()=>{});
+    if(exportId) {
+      try {await desktop.finishExport(exportId,false);}
+      catch(cleanupError) {console.error('Could not clean up export:',cleanupError);}
+    }
     if(error.name==='AbortError') $('export-dialog').close();
     else {
-      if(saving&&desktop) exportDestination=null;
       exportMessage(error.message);
     }
   } finally {
@@ -2065,18 +2069,18 @@ document.addEventListener('keydown',event=>{
 });
 
 new ResizeObserver(frameFit).observe($('viewport'));
-let rulerWidth=scroll.clientWidth;
+let rulerWidth=scroll.getBoundingClientRect().width;
 let rulerRatio=window.devicePixelRatio;
 let rulerResizeFrame=0;
 new ResizeObserver(()=>{
-  const width=scroll.clientWidth;
+  const width=scroll.getBoundingClientRect().width;
   const ratio=window.devicePixelRatio;
   if(width===rulerWidth&&ratio===rulerRatio) return;
   rulerWidth=width;
   rulerRatio=ratio;
   cancelAnimationFrame(rulerResizeFrame);
   rulerResizeFrame=requestAnimationFrame(()=>{if(!drag) renderTimeline();});
-}).observe(scroll);
+}).observe(scroll,{box:'border-box'});
 window.addEventListener('beforeunload',event=>{
   if(!desktop&&JSON.stringify(project)!==saved) {event.preventDefault();event.returnValue='';}
 });
