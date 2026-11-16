@@ -1,5 +1,5 @@
 const {app, BrowserWindow, Menu, dialog, ipcMain, protocol, screen, shell} = require('electron') as typeof import('electron');
-const {readFile, writeFile, appendFile, stat, rename, rm, mkdir, readdir, mkdtemp, copyFile, rmdir} = require('node:fs/promises') as typeof import('node:fs/promises');
+const {readFile, writeFile, appendFile, stat, rename, rm, mkdir, readdir, copyFile} = require('node:fs/promises') as typeof import('node:fs/promises');
 const {isDeepStrictEqual} = require('node:util') as typeof import('node:util');
 const {constants, createReadStream, readFileSync, renameSync, watch, writeFileSync} = require('node:fs') as typeof import('node:fs');
 const {Readable} = require('node:stream') as typeof import('node:stream');
@@ -186,41 +186,6 @@ app.whenReady().then(() => {
   });
   handle('projects-delete',async (_win,id)=>{
     await shell.trashItem(managedFile(id));
-  });
-  handle('projects-collect',async (win,id)=>{
-    const project=await managedRead(id);
-    const choice=await dialog.showOpenDialog(win,{title:'Choose where to save the project copy',properties:['openDirectory']});
-    if(choice.canceled||!choice.filePaths.length) return null;
-    const title=String(project.name||'Oclip project').replace(/[^\w -]/g,'_').trim().slice(0,70)||'Oclip project';
-    const folder=await mkdtemp(path.join(choice.filePaths[0],title+'-'));
-    const mediaFolder=path.join(folder,'media');
-    const copied=new Map();
-    const file=path.join(folder,'Project.oclip');
-    try {
-      await mkdir(mediaFolder);
-      for(const asset of project.assets) {
-        if(!asset.path) {
-          if(bundledAssets.has(asset.bundled)) continue;
-          throw Error('Locate missing media before collecting the project: '+asset.name);
-        }
-        const source=path.resolve(path.dirname(managedFile(id)),asset.path);
-        if(!copied.has(source)) {
-          const name=(copied.size+1)+'-'+path.basename(source);
-          const destination=path.join(mediaFolder,name);
-          copied.set(source,destination);
-          try {await copyFile(source,destination);}
-          catch {throw Error('Could not copy '+asset.name+'. Check that the source file is available.');}
-        }
-        asset.path=path.relative(folder,copied.get(source)).split(path.sep).join('/');
-      }
-      await atomicWrite(file,JSON.stringify(project,null,2));
-      return {folder,file};
-    } catch(error) {
-      for(const destination of copied.values()) await rm(destination,{force:true}).catch(()=>{});
-      await rmdir(mediaFolder).catch(()=>{});
-      await rmdir(folder).catch(()=>{});
-      throw error;
-    }
   });
   const recoveryFile=path.join(app.getPath('userData'),'recovery.json');
   let recoveryWrite=Promise.resolve();

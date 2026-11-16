@@ -16,7 +16,6 @@ export interface DesktopApi {
   createProject(project: Project): Promise<{id: string; file: string}>;
   openManagedProject(id: string): Promise<OpenProject>;
   duplicateProject(id: string): Promise<void>;
-  collectProject(id: string): Promise<{folder: string; file: string} | null>;
   deleteProject(id: string): Promise<void>;
   setProjectPath(file: string | null): Promise<void>;
   checkpoint(project: Project | null, view?: ViewState): Promise<void>;

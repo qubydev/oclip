@@ -1,12 +1,36 @@
 import {icon} from './icons.js';
 import {mediaPreview} from './media-previews.js';
 import {compositionAt} from './playback.js';
+import type {ProjectRecord} from './desktop-api.js';
+
+interface ProjectActions {
+  open(id: string): void;
+  select(id: string | null): void;
+  duplicate(id: string): void;
+  remove(project: ProjectRecord): void;
+}
 
 const projectDate=new Intl.DateTimeFormat(undefined,{dateStyle:'medium'});
 const projectName=new Intl.Collator(undefined,{sensitivity:'base',numeric:true});
 
-export function renderProjects(container,projects,actions,{query='',sort='recent'}={}) {
+export function renderProjects(container: HTMLElement,projects: ProjectRecord[],actions: ProjectActions,{query='',sort='recent',selectedId=null as string | null}={}) {
   container.replaceChildren();
+  function selectProject(id: string | null) {
+    selectedId=id;
+    for(const card of container.querySelectorAll<HTMLElement>('.home-project')) {
+      const selected=card.dataset.project===id;
+      card.classList.toggle('selected',selected);
+      card.querySelector('.home-open').setAttribute('aria-pressed',String(selected));
+    }
+    actions.select(id);
+  }
+  const surface=container.closest<HTMLElement>('.project-home')??container;
+  surface.onpointerdown=event=>{
+    if(!(event.target instanceof Element)||event.target.closest('.home-project')) return;
+    selectProject(null);
+    const focused=document.activeElement;
+    if(focused instanceof HTMLElement&&container.contains(focused)) focused.blur();
+  };
   const matches=projects.filter(project=>project.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   if(sort==='name') matches.sort((a,b)=>projectName.compare(a.name,b.name)||b.modified-a.modified);
   if(!matches.length) {
@@ -20,13 +44,27 @@ export function renderProjects(container,projects,actions,{query='',sort='recent
   for(const project of matches) {
     const card=document.createElement('article');
     card.className='home-project';
+    card.dataset.project=project.id;
+    card.classList.toggle('selected',project.id===selectedId);
     card.innerHTML='<button class="home-open" type="button"><span class="home-thumbnail"></span><span class="home-project-meta"><strong></strong><time></time></span></button>'+
       '<button class="icon-button home-more" type="button" title="Project options" aria-expanded="false">'+icon('more')+'</button>'+
       '<div class="home-project-menu" popover><button type="button" data-duplicate autofocus>'+icon('copy')+'Duplicate</button>'+
-      '<button type="button" data-collect>'+icon('folder')+'Collect project files</button>'+
       '<button type="button" class="home-delete" data-delete>'+icon('trash')+'Delete</button></div>';
     const open=card.querySelector<HTMLElement>('.home-open');
-    open.onclick=()=>actions.open(project.id);
+    open.setAttribute('aria-pressed',String(project.id===selectedId));
+    open.title='Double-click or press Enter to open';
+    open.onclick=()=>selectProject(project.id);
+    open.ondblclick=()=>{
+      selectProject(project.id);
+      actions.open(project.id);
+    };
+    open.onkeydown=event=>{
+      if(event.key!=='Enter') return;
+      event.preventDefault();
+      if(event.repeat) return;
+      selectProject(project.id);
+      actions.open(project.id);
+    };
     const title=card.querySelector<HTMLElement>('strong');
     title.textContent=project.name;
     title.title=project.name;
@@ -47,6 +85,7 @@ export function renderProjects(container,projects,actions,{query='',sort='recent
     const menu=card.querySelector<HTMLElement>('.home-project-menu');
     more.setAttribute('aria-label',String('Options for '+project.name));
     more.onclick=()=>{
+      selectProject(project.id);
       if(menu.matches(':popover-open')) {menu.hidePopover();return;}
       const anchor=more.getBoundingClientRect();
       menu.showPopover({source:more});
@@ -59,10 +98,6 @@ export function renderProjects(container,projects,actions,{query='',sort='recent
     menu.querySelector<HTMLElement>('[data-duplicate]').onclick=()=>{
       menu.hidePopover();
       actions.duplicate(project.id);
-    };
-    menu.querySelector<HTMLElement>('[data-collect]').onclick=()=>{
-      menu.hidePopover();
-      actions.collect(project.id);
     };
     menu.querySelector<HTMLElement>('[data-delete]').onclick=()=>{
       menu.hidePopover();

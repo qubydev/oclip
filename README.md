@@ -28,7 +28,7 @@ The project is in early development, with Windows x64 as the current build targe
 - **Composition controls** — Position and scale layers in the preview. Adjust text, color, opacity, volume, and canvas dimensions in the inspector.
 - **Media library** — Import video, images, and audio; preview assets before adding them to the timeline.
 - **Project management** — Create, reopen, duplicate, and delete projects from the home screen, with autosave and recovery support.
-- **Portable projects** — Relink missing media or collect a project and its source files into a folder for transfer.
+- **Media relinking** — Locate missing source files individually or search for them in a folder.
 - **Video export** — Export MP4 (H.264) or WebM when supported by the installed encoder, with progress reporting and cancellation.
 
 ## Getting started
@@ -61,7 +61,9 @@ For a browser preview, run `npm run preview` and open [localhost:4173](http://12
 3. Move clips, drag their edges to trim, and use the inspector for precise adjustments.
 4. Press **Ctrl+S** to save, then choose **Export** to render your video.
 
-Project files reference source media on disk. Keep those files available, or use **Collect project files** from the home screen's project menu before moving a project to another computer.
+Single-click a project card to select it. Press **Enter** or double-click to open it.
+
+Project files reference source media on disk. Keep those files available and relink them if their location changes.
 
 ## Development
 
@@ -98,7 +100,7 @@ Type errors stop compilation. Strict mode is currently disabled, so unannotated 
 
 - Windows x64 is the supported installer target; macOS and Linux releases are not configured.
 - Export currently runs in real time at 30 fps. Available formats depend on Chromium's encoder support; frame-driven rendering remains planned work.
-- Project portability depends on keeping source media available or collecting it with the project.
+- Project files reference source media rather than embedding it; keep the original files available.
 
 ## Contributing
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, readFile, rename, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, mkdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -47,8 +47,8 @@ async function desktopFixture(t) {
   return {temp,projectStore,call,select:value=>{selectedPath=value;},pickerArgs:()=>pickerArgs};
 }
 
-test('collected projects reopen after moving, and a saved checkpoint does not prompt for recovery',async t=>{
-  const {temp,call,select}=await desktopFixture(t);
+test('managed projects reopen with media, and a saved checkpoint does not prompt for recovery',async t=>{
+  const {temp,call}=await desktopFixture(t);
   const source=path.join(temp,'original.wav');
   await writeFile(source,'test media bytes');
   const project=createProject('Example');
@@ -60,14 +60,8 @@ test('collected projects reopen after moving, and a saved checkpoint does not pr
   const unsaved={...project,name:'Unsaved edit'};
   await call('checkpoint',unsaved,{frame:4});
   assert.equal((await call('recover')).project.name,'Unsaved edit');
-  const copy=await call('projects-collect',managed.id);
-  const manifest=JSON.parse(await readFile(copy.file,'utf8'));
-  assert.equal(manifest.assets[0].path,'media/1-original.wav');
-  const moved=path.join(temp,'moved-project');
-  await rename(copy.folder,moved);
-  await rm(source);
-  select(path.join(moved,'Project.oclip'));
-  const opened=await call('open');
+  const opened=await call('projects-open',managed.id);
+  assert.equal(opened.project.name,'Example');
   assert.match(opened.project.assets[0].url,/^oclip:\/\/editor\/media\//);
   assert.equal(await readFile(opened.project.assets[0].path,'utf8'),'test media bytes');
 });

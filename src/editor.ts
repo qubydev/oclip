@@ -1319,19 +1319,21 @@ function homeMessage(message='') {
 }
 
 let homeProjects=[];
+let selectedHomeProject: string | null=null;
 function drawHomeProjects() {
     $('home-tools').hidden=!homeProjects.length;
     renderProjects($('home-projects'),homeProjects,{
       open:id=>homeAction('open',id),
+      select:id=>{selectedHomeProject=id;},
       duplicate:id=>homeAction('duplicate',id),
-      collect:id=>homeAction('collect',id),
       remove:project=>homeAction('remove',project),
-    },{query:$('home-search').value,sort:$('home-sort').value});
+    },{query:$('home-search').value,sort:$('home-sort').value,selectedId:selectedHomeProject});
 }
 
 async function refreshHome() {
   try {
     homeProjects=await desktop.listProjects();
+    if(!homeProjects.some(project=>project.id===selectedHomeProject)) selectedHomeProject=null;
     drawHomeProjects();
   } catch(error) {homeMessage(error.message);}
 }
@@ -1378,11 +1380,6 @@ async function homeAction(action,target?) {
   fileBusy=true;
   homeMessage();
   try {
-    if(action==='collect') {
-      const result=await desktop.collectProject(target);
-      if(result) homeMessage('Project and media copied to '+result.folder);
-      return;
-    }
     if(action==='duplicate'||action==='remove') {
       if(action==='duplicate') await desktop.duplicateProject(target);
       else if(await confirmAction({title:'Delete project?',description:'“'+target.name+'” will move to the Recycle Bin.',
